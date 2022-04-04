@@ -123,10 +123,9 @@ def read_dm(fnames, keep_group):
         f = h5py.File(ff, 'r')
         tmp_gn = f['PartType1/GroupNumber'][...]
         tmp_sgn = f['PartType1/SubGroupNumber'][...]
-
+        
         # keep particles in group and centrals only
         keep_ind = (tmp_gn == keep_group) & (tmp_sgn == 0)
-
         if(any(keep_ind)):
             tmp_coord = f['PartType1/Coordinates'][:][keep_ind]
             tmp_vels = f['PartType1/Velocity'][:][keep_ind]
@@ -224,7 +223,7 @@ def run_processing(file_names, base, var_list, group_dat, gpn):
 
     # stars
     stars = read_stars(file_names, gpn, var_list)
-        
+    
     # dark matter
     dm = read_dm(file_names, gpn)
     dm_mass = read_dataset_dm_mass(base)
@@ -245,22 +244,21 @@ def run_processing(file_names, base, var_list, group_dat, gpn):
 
 def main():
     # particle and group directories
-    base = '/fred/oz009/clagos/EAGLE/L0050N0752/PE/REFERENCE/data/'
+    base = '/fred/oz009/clagos/EAGLE/L0025N0376/REFERENCE/data/'
     fpath = base + 'particledata_028_z000p000/'
     gpfpath = base + 'groups_028_z000p000/'
-    output_fpath = '/fred/oz009/kproctor/L0050N0752/processed/'
+    output_fpath = '/fred/oz009/kproctor/L0025N0376_Ref/processed/'
   
     # get relevant group data
     keep_groups, var_list = parse_groups()  
     print("Processing groups: ", keep_groups, flush=True) 
     nfiles_gp = read_groups.get_nfiles(gpfpath)
     group_dat = read_groups.read_groups(nfiles_gp, gpfpath)
-
     # list all z=0 files
     file_names = glob.glob(fpath + "*.hdf5")
-
+    
     for gpn in keep_groups:
-
+        gpn = int(gpn)
         print("Reading group number:", gpn)
         
         ## Process stars and dark matter data for group
