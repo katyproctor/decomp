@@ -115,6 +115,7 @@ def read_dm(fnames, keep_group):
     data_vels = []
     data_ids = []
     data_energy = []
+    data_mass = []
 
     data = []
 
@@ -131,11 +132,13 @@ def read_dm(fnames, keep_group):
             tmp_vels = f['PartType1/Velocity'][:][keep_ind]
             tmp_ids = f['PartType1/ParticleIDs'][keep_ind]
             tmp_energy = f['PartType1/ParticleBindingEnergy'][keep_ind]
+            tmp_mass = f['PartType1/Mass'][keep_ind]   
 
             data_coords.append(tmp_coord)
             data_vels.append(tmp_vels)
             data_ids.append(tmp_ids)
             data_energy.append(tmp_energy)
+            data_mass.append(tmp_mass)
 
             # Get conversion factors.
             cgs     = f['PartType1/Coordinates'].attrs.get('CGSConversionFactor')
@@ -150,6 +153,10 @@ def read_dm(fnames, keep_group):
             aexp_e    = f['PartType1/ParticleBindingEnergy'].attrs.get('aexp-scale-exponent')
             hexp_e    = f['PartType1/ParticleBindingEnergy'].attrs.get('h-scale-exponent')
 
+            cgs_mass     = f['PartType1/Mass'].attrs.get('CGSConversionFactor')
+            aexp_mass    = f['PartType1/Mass'].attrs.get('aexp-scale-exponent')
+            hexp_mass    = f['PartType1/Mass'].attrs.get('h-scale-exponent')
+
             # Get expansion factor and Hubble parameter from the header.
             a       = f['Header'].attrs.get('Time')
             h       = f['Header'].attrs.get('HubbleParam')
@@ -162,17 +169,20 @@ def read_dm(fnames, keep_group):
     data_vels = np.vstack(data_vels)
     data_ids = np.concatenate(data_ids)
     data_energy = np.concatenate(data_energy)
+    data_mass = np.concatenate(data_mass)
 
     # Convert to physical.
     data_coords = np.multiply(data_coords, cgs * a**aexp * h**hexp, dtype='f8') 
     data_vels = np.multiply(data_vels, cgs_vel * a**aexp_vel * h**hexp_vel, dtype='f8')
     data_energy = np.multiply(data_energy, cgs_e * a**aexp_e * h**hexp_e, dtype='f8')
+    data_mass = np.multiply(data_mass, cgs_mass * a**aexp_mass * h**hexp_mass, dtype='f8')
    
     # append and create df
     data.append(pd.DataFrame(data_coords, columns = ['x','y','z']))
     data.append(pd.DataFrame(data_vels, columns = ['vx','vy','vz']))
     data.append(pd.DataFrame(data_ids, columns = ['ParticleIDs']))
     data.append(pd.DataFrame(data_energy, columns = ['ParticleBindingEnergy']))
+    data.append(pd.DataFrame(data_mass, columns = ['Mass']))
 
     # put it all together
     data = pd.concat(data, axis=1)
@@ -226,8 +236,6 @@ def run_processing(file_names, base, var_list, group_dat, gpn):
     
     # dark matter
     dm = read_dm(file_names, gpn)
-    dm_mass = read_dataset_dm_mass(base)
-    dm['Mass'] = dm_mass
  
     # combine data
     dat = pd.concat([stars, dm]).reset_index(drop = True)
@@ -244,10 +252,10 @@ def run_processing(file_names, base, var_list, group_dat, gpn):
 
 def main():
     # particle and group directories
-    base = '/fred/oz009/clagos/EAGLE/L0025N0376/REFERENCE/data/'
+    base = '/fred/oz009/mwilkinson/EAGLE/L0050N0752/REF_7x752dm/data/'
     fpath = base + 'particledata_028_z000p000/'
     gpfpath = base + 'groups_028_z000p000/'
-    output_fpath = '/fred/oz009/kproctor/L0025N0376_Ref/processed/'
+    output_fpath = '/fred/oz009/kproctor/L0050N0752_7xdm/processed/'
   
     # get relevant group data
     keep_groups, var_list = parse_groups()  
