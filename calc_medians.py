@@ -19,6 +19,21 @@ def calc_kappa_rot(dat, rcut):
     return kappa_rot
 
 
+def calc_rx(dat, x):
+    '''Calculate the radius that contains x% of the stellar mass.
+    x entered as  decimal'''
+    dat = dat.sort_values("rad")
+    dat['menc'] = dat['Mass'].cumsum()
+    x_mtot = np.max(dat['menc'])*x
+    dat['diff'] = abs(x_mtot - dat['menc'])
+
+    # find minimum diff from m50
+    rid = dat['diff'].idxmin()
+    rx = dat.loc[rid]['rad']
+
+    return rx
+
+
 def classify_kinematic_cuts(dat):
     '''Classify disk stars
       Method follows Zolotov 2009, Section 2.1
@@ -104,7 +119,7 @@ def median_calc(dat, col, col_str, var_list):
 
 def main():
     # particle and group directories
-    fpath = '/fred/oz009/kproctor/L0025N0376_Ref/processed/'
+    fpath = '/fred/oz009/kproctor/L0100N1504/processed/'
     flist = glob.glob(fpath + "*.pkl")
 
     # initialise output dataframes
@@ -112,7 +127,7 @@ def main():
     all_meds_rows = []
 
     for i, f in enumerate(flist):
-        gpn = int(re.findall(r'\d+', f)[0]) # extract group number
+        gpn = int(re.findall(r'\d+', f)[-1]) # extract group number, last entry because numbers in filepath
         dat = pd.read_pickle(f)
 
         dat['GroupNumber'] = gpn
@@ -131,7 +146,7 @@ def main():
         dat = calc_fractions(dat)
 
         # save dataframe of just mass fractions and global properties - TODO:add kappa_rot
-        global_cols = ['GroupNumber','mstar', 'm200', 'r200', 'kappa_rot',
+        global_cols = ['GroupNumber','mstar', 'm200', 'r200', 'kappa_rot',"ihl_mad",
             'fihl_20kpc', 'fihl_2halfmass', 'fihl_kinematic',
            'fdisk_kinematic', 'fbulge_kinematic', 'fihl', 'fdisk', 'fbulge']
         global_tmp = dat[global_cols].drop_duplicates()
@@ -145,6 +160,17 @@ def main():
         gmm_gal_meds = median_calc(dat, "gmm_pred_gal", "gmm_gal", var_list)
         aperture_meds = median_calc(dat, "ihl_2halfmass", "aperture", var_list)
         cut_meds = median_calc(dat, "kinematic_cuts", "cuts", var_list)
+
+        # get r50 for each component & method
+        if dat[dat['gmm_pred'] == "IHL"].shape[0] != 0:
+            r50_ihl = calc_rx(dat[dat['gmm_pred'] == "IHL"], 0.5)
+            gmm_meds.loc[gmm_meds['component'] == "IHL", "r50"] = r50_ihl
+        if dat[dat['gmm_pred'] == "disk"].shape[0] != 0:
+            r50_disk = calc_rx(dat[dat['gmm_pred'] == "disk"], 0.5)
+            gmm_meds.loc[gmm_meds['component'] == "disk", "r50"] = r50_disk
+        if dat[dat['gmm_pred'] == "bulge"].shape[0] != 0:
+            r50_bulge = calc_rx(dat[dat['gmm_pred'] == "bulge"], 0.5)
+            gmm_meds.loc[gmm_meds['component'] == "bulge", "r50"] = r50_bulge
 
         all_meds = pd.concat([gmm_meds, gmm_gal_meds, aperture_meds, cut_meds])
         all_meds['GroupNumber'] = gpn

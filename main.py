@@ -2,6 +2,7 @@
 import numpy as np
 import h5py
 import glob
+import os
 import pandas as pd
 import argparse
 
@@ -16,13 +17,15 @@ s_to_Gyr = 1/(86400*365.25*1e9)
 cm_to_km = 1e-5
 
 
-def parse_groups():
+def parse_args():
     """
-    Input is list of GroupNumbers for which the central galaxy data will be processed. Defaults to two groups for testing purposes (GroupNumber=666,1000).
+    Input is list of GroupNumbers for which the central galaxy data will be processed. Defaults to three groups for testing purposes.
     """
     parser = argparse.ArgumentParser(description='Process Eagle data.')
     parser.add_argument("-gl", "--group_list", help="List of Eagle GroupNumbers to process.", nargs='*', default = [10, 666,1000])
-  
+    parser.add_argument("-b", "--base_dir", help="Base directory for the Eagle data. Enter as string.")
+    parser.add_argument("-o", "--out_dir", help="Where to store the processed star data. Enter as string.")
+      
     # default list of variables to store for each central
     var_list = ["Coordinates", "Velocity", "Mass", "StellarFormationTime",
                 "Metallicity", "ParticleIDs", "ParticleBindingEnergy",
@@ -30,10 +33,13 @@ def parse_groups():
                 ]
     parser.add_argument("-vl", "--var_list", help="List of variables to store (for stellar particles)", nargs='*', default = var_list)
     args = parser.parse_args()
+    
+    base_dir = args.base_dir
+    out_dir = args.out_dir
     keep_groups = args.group_list
     keep_vars = args.var_list
 
-    return keep_groups, keep_vars
+    return base_dir, out_dir, keep_groups, keep_vars
 
 
 def read_stars(fnames, keep_group, var_list):
@@ -115,7 +121,6 @@ def read_dm(fnames, keep_group):
     data_vels = []
     data_ids = []
     data_energy = []
-    data_mass = []
 
     data = []
 
@@ -132,13 +137,11 @@ def read_dm(fnames, keep_group):
             tmp_vels = f['PartType1/Velocity'][:][keep_ind]
             tmp_ids = f['PartType1/ParticleIDs'][keep_ind]
             tmp_energy = f['PartType1/ParticleBindingEnergy'][keep_ind]
-            tmp_mass = f['PartType1/Mass'][keep_ind]   
 
             data_coords.append(tmp_coord)
             data_vels.append(tmp_vels)
             data_ids.append(tmp_ids)
             data_energy.append(tmp_energy)
-            data_mass.append(tmp_mass)
 
             # Get conversion factors.
             cgs     = f['PartType1/Coordinates'].attrs.get('CGSConversionFactor')
@@ -153,10 +156,6 @@ def read_dm(fnames, keep_group):
             aexp_e    = f['PartType1/ParticleBindingEnergy'].attrs.get('aexp-scale-exponent')
             hexp_e    = f['PartType1/ParticleBindingEnergy'].attrs.get('h-scale-exponent')
 
-            cgs_mass     = f['PartType1/Mass'].attrs.get('CGSConversionFactor')
-            aexp_mass    = f['PartType1/Mass'].attrs.get('aexp-scale-exponent')
-            hexp_mass    = f['PartType1/Mass'].attrs.get('h-scale-exponent')
-
             # Get expansion factor and Hubble parameter from the header.
             a       = f['Header'].attrs.get('Time')
             h       = f['Header'].attrs.get('HubbleParam')
@@ -169,20 +168,17 @@ def read_dm(fnames, keep_group):
     data_vels = np.vstack(data_vels)
     data_ids = np.concatenate(data_ids)
     data_energy = np.concatenate(data_energy)
-    data_mass = np.concatenate(data_mass)
 
     # Convert to physical.
     data_coords = np.multiply(data_coords, cgs * a**aexp * h**hexp, dtype='f8') 
     data_vels = np.multiply(data_vels, cgs_vel * a**aexp_vel * h**hexp_vel, dtype='f8')
     data_energy = np.multiply(data_energy, cgs_e * a**aexp_e * h**hexp_e, dtype='f8')
-    data_mass = np.multiply(data_mass, cgs_mass * a**aexp_mass * h**hexp_mass, dtype='f8')
    
     # append and create df
     data.append(pd.DataFrame(data_coords, columns = ['x','y','z']))
     data.append(pd.DataFrame(data_vels, columns = ['vx','vy','vz']))
     data.append(pd.DataFrame(data_ids, columns = ['ParticleIDs']))
     data.append(pd.DataFrame(data_energy, columns = ['ParticleBindingEnergy']))
-    data.append(pd.DataFrame(data_mass, columns = ['Mass']))
 
     # put it all together
     data = pd.concat(data, axis=1)
@@ -225,17 +221,18 @@ def unit_conversion(dat):
     return dat
 
 
-def run_processing(file_names, base, var_list, group_dat, gpn):
+def run_processing(file_names, var_list, group_dat, gpn, base):
     '''
     Extracts relevant quantities for star and DM particles in centrals at z=0
-    base: string, directory where the Eagle data is stored
-    group: pd.DataFrame, group level data'''
+    file_names: string, directory where the Eagle particle data is stored
+    group_dat: pd.DataFrame, group level data'''
 
     # stars
     stars = read_stars(file_names, gpn, var_list)
     
     # dark matter
     dm = read_dm(file_names, gpn)
+    dm['Mass'] = read_dataset_dm_mass(base)
  
     # combine data
     dat = pd.concat([stars, dm]).reset_index(drop = True)
@@ -251,17 +248,17 @@ def run_processing(file_names, base, var_list, group_dat, gpn):
 
 
 def main():
-    # particle and group directories
-    base = '/fred/oz009/mwilkinson/EAGLE/L0050N0752/REF_7x752dm/data/'
+
+    # set particle and group directories
+    base, output_fpath, keep_groups, var_list = parse_args()  
     fpath = base + 'particledata_028_z000p000/'
     gpfpath = base + 'groups_028_z000p000/'
-    output_fpath = '/fred/oz009/kproctor/L0050N0752_7xdm/processed/'
-  
-    # get relevant group data
-    keep_groups, var_list = parse_groups()  
+    
+    # get group data
     print("Processing groups: ", keep_groups, flush=True) 
     nfiles_gp = read_groups.get_nfiles(gpfpath)
     group_dat = read_groups.read_groups(nfiles_gp, gpfpath)
+   
     # list all z=0 files
     file_names = glob.glob(fpath + "*.hdf5")
     
@@ -270,9 +267,9 @@ def main():
         print("Reading group number:", gpn)
         
         ## Process stars and dark matter data for group
-        dat = run_processing(file_names, base, var_list, group_dat, gpn)
+        dat = run_processing(file_names, var_list, group_dat, gpn, base)
     
-        # don't bother if the halo contains fewer than 100 stars
+        # don't bother if the central contains fewer than 100 stars
         if dat[dat['type'] == "star"].shape[0] < 100:
             print("Don't process: fewer than 100 stellar particles", flush = True)
             continue 
@@ -282,9 +279,14 @@ def main():
 
         ## Decomposition model
         plot_folder = output_fpath + "plots/"
+
+        # create directory if it does not already exist
+        if not os.path.exists(plot_folder):
+            os.makedirs(plot_folder)
+
         dat = model.run(dat, plot_folder, gpn)
 
-        ## Save output 
+        ## Save output for central 
         output_fname = "central_" + str(gpn) + ".pkl"
         dat.to_pickle(output_fpath+output_fname)
 
