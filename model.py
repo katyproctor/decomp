@@ -20,7 +20,7 @@ def remove_disk(dat):
 
     for i in np.arange(1,5):
         print("iteration: ", i)
-        model_dat = iter_dat[['jz/jcirc', 'ebindrel', 'jp/jcirc',]]
+        model_dat = iter_dat[['jz/jcirc', 'ebindrel', 'jp/jcirc']]
         model = GaussianMixture(n_components=3, n_init = 3,
         covariance_type='full', random_state=0).fit(model_dat)
 
@@ -54,22 +54,17 @@ def fit_bulge_gmms(iter_dat, max_ncomp):
     models = np.array([])
     allocs_arr = []
     # add predicted cluster to original data
-    model_dat = iter_dat[['jz/jcirc', 'ebindrel', 'jp/jcirc', 'vx', 'vy', 'vz']]
+    model_dat = iter_dat[['jz/jcirc', 'ebindrel', 'jp/jcirc']]
 
     for n in range(2, max_ncomp+1):
         # set priors - equally spaced means for ebind
-        # vcomps mean = 0
         spacing = 1/(n - 1)
         ebind_guess = [i*spacing for i in range(n)]
-
-        vx_guess = [0]*n
-        vy_guess = [0]*n
-        vz_guess = [0]*n
 
         jzjc_guess = [0]*n
         jpjc_guess = [0.5]*n
 
-        priors = np.array([jzjc_guess, ebind_guess, jpjc_guess, vx_guess, vy_guess, vz_guess]).T
+        priors = np.array([jzjc_guess, ebind_guess, jpjc_guess]).T
 
         # save model info
         model = GaussianMixture(n_components=n, n_init = 3,
@@ -140,7 +135,7 @@ def run(dat, plot_folder, gpn):
         disk, remaining, ncomp_disk = remove_disk(dat)
 
 	# classify bulge and IHL
-        max_ncomp = 16
+        max_ncomp = 10
         remaining, models, allocs_arr = fit_bulge_gmms(remaining, max_ncomp)
         m_bulge, m_ihl, ncomps = calc_mass_comps(remaining, max_ncomp)
 

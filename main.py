@@ -261,7 +261,7 @@ def main():
    
     # list all z=0 files
     file_names = glob.glob(fpath + "*.hdf5")
-    
+    keep_groups = [14, 723, 914]    
     for gpn in keep_groups:
         gpn = int(gpn)
         print("Reading group number:", gpn)
@@ -270,8 +270,8 @@ def main():
         dat = run_processing(file_names, var_list, group_dat, gpn, base)
     
         # don't bother if the central contains fewer than 100 stars
-        if dat[dat['type'] == "star"].shape[0] < 100:
-            print("Don't process: fewer than 100 stellar particles", flush = True)
+        if dat[dat['type'] == "star"].shape[0] < 1000:
+            print("Don't process: fewer than 1000 stellar particles", flush = True)
             continue 
     
         ## Calculate various properties for modelling for stars

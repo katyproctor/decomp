@@ -3,10 +3,11 @@ import pandas as pd
 import re
 import glob
 
+import calc_morphology
 
-def calc_kappa_rot(dat, rcut):
+def calc_kappa_co(dat, rcut):
     '''
-    Calculate kappa_rot as per Correa 2017
+    Calculate kappa_rot & kappa_co as per Correa 2017
     '''
     dat['R'] = np.sqrt(dat['x']**2 +dat['y']**2)
 
@@ -15,8 +16,9 @@ def calc_kappa_rot(dat, rcut):
     dat['K'] = 0.5*dat['Mass']*(dat['vx']**2 + dat['vy']**2 + dat['vz']**2)
 
     kappa_rot = sum(dat['Krot'][dat['rad'] < rcut]) / sum(dat['K'][dat['rad'] < rcut])
+    kappa_co = sum(dat['Krot'][(dat['rad'] < rcut) & (dat['jz'] > 0)]) / sum(dat['K'][dat['rad'] < rcut])
 
-    return kappa_rot
+    return kappa_co
 
 
 def calc_rx(dat, x):
@@ -129,14 +131,29 @@ def main():
     for i, f in enumerate(flist):
         gpn = int(re.findall(r'\d+', f)[-1]) # extract group number, last entry because numbers in filepath
         dat = pd.read_pickle(f)
-
+        nstar = dat.shape[0]
+      
+        # only process galaxies with at least 1000 star particles
+        if nstar < 1000:
+            continue
+       
         dat['GroupNumber'] = gpn
         dat['Fe/O'] = dat['ElementAbundance/Iron']/dat['ElementAbundance/Oxygen']
         dat["Formation_z"] = 1/dat['StellarFormationTime'] - 1
         dat['mstar'] = dat['Mass'].sum()
+        
+        dat['nihl'] = dat[dat['gmm_pred'] == "IHL"].shape[0]
+        dat['ndisk'] = dat[dat['gmm_pred'] == "disk"].shape[0]
+        dat['nbulge'] = dat[dat['gmm_pred'] == "bulge"].shape[0]
 
-        ## Calculate kappa_rot for morphology indicator
-        dat['kappa_rot'] = calc_kappa_rot(dat, 30)
+        ## Calculate kappa_rot and ellipticity as morphology indicator
+        dat['kappa_co'] = calc_kappa_co(dat, 30)
+        ellip,triax,Transform,abc = calc_morphology.morphological_diagnostics(dat)
+        dat['ellip'] = ellip
+        dat['triax'] = triax
+        dat['a'] = abc[0]
+        dat['b'] = abc[1]
+        dat['c'] = abc[2]
 
         ## Calculate IHL mass estimates for other methods
         dat = classify_aperture_cut(dat)
@@ -145,8 +162,10 @@ def main():
         # mass fractions for various methods
         dat = calc_fractions(dat)
 
-        # save dataframe of just mass fractions and global properties - TODO:add kappa_rot
-        global_cols = ['GroupNumber','mstar', 'm200', 'r200', 'kappa_rot',"ihl_mad",
+        # save dataframe of just mass fractions and global properties
+        global_cols = ['GroupNumber','mstar', 'm200', 'r200',
+             'kappa_co', 'ellip', 'triax', 'a', 'b', 'c', 
+            "ihl_mad", "nihl", "ndisk", "nbulge",
             'fihl_20kpc', 'fihl_2halfmass', 'fihl_kinematic',
            'fdisk_kinematic', 'fbulge_kinematic', 'fihl', 'fdisk', 'fbulge']
         global_tmp = dat[global_cols].drop_duplicates()
