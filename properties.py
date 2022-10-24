@@ -12,6 +12,22 @@ from scipy.optimize import brentq
 from scipy import stats
 
 
+def calc_kappa_co(dat, rcut):
+    '''
+    Calculate kappa_rot & kappa_co as per Correa 2017
+    '''
+    dat['R'] = np.sqrt(dat['x']**2 +dat['y']**2)
+
+    dat['jz'] = dat['jz/jcirc']*dat['jcirc']
+    dat['Krot'] = 0.5*dat['Mass']*(dat['jz']/dat['R'])**2
+    dat['K'] = 0.5*dat['Mass']*(dat['vx']**2 + dat['vy']**2 + dat['vz']**2)
+
+    kappa_rot = sum(dat['Krot'][dat['rad'] < rcut]) / sum(dat['K'][dat['rad'] < rcut])
+    kappa_co = sum(dat['Krot'][(dat['rad'] < rcut) & (dat['jz'] > 0)]) / sum(dat['K'][dat['rad'] < rcut])
+
+    return kappa_co
+
+
 def calc_rx(dat, x):
     '''Calculate the radius that contains x% of the stellar mass.
     x to be input as decimal'''

@@ -6,6 +6,7 @@ import os
 import pandas as pd
 import argparse
 
+import read_particles
 import read_groups
 import properties
 import model
@@ -261,7 +262,8 @@ def main():
    
     # list all z=0 files
     file_names = glob.glob(fpath + "*.hdf5")
-    keep_groups = [14, 723, 914]    
+
+    keep_groups = [14,914]
     for gpn in keep_groups:
         gpn = int(gpn)
         print("Reading group number:", gpn)

@@ -67,7 +67,7 @@ def fit_bulge_gmms(iter_dat, max_ncomp):
         priors = np.array([jzjc_guess, ebind_guess, jpjc_guess]).T
 
         # save model info
-        model = GaussianMixture(n_components=n, n_init = 3,
+        model = GaussianMixture(n_components=n, n_init = 5,
         covariance_type='full', means_init = priors, random_state=0).fit(model_dat)
 
         models = np.append(model, models)
@@ -135,7 +135,7 @@ def run(dat, plot_folder, gpn):
         disk, remaining, ncomp_disk = remove_disk(dat)
 
 	# classify bulge and IHL
-        max_ncomp = 10
+        max_ncomp = 16
         remaining, models, allocs_arr = fit_bulge_gmms(remaining, max_ncomp)
         m_bulge, m_ihl, ncomps = calc_mass_comps(remaining, max_ncomp)
 
@@ -148,6 +148,7 @@ def run(dat, plot_folder, gpn):
 
 	# calculate the median absolute deviation from this values for other mass estimates
         dat['ihl_mad'] = np.median(abs(m_ihl - np.median(m_ihl)))
+        dat['ncomp'] = comp_no
 
 	# assign particles a component
         if ihl is not None:
