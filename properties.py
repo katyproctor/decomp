@@ -62,7 +62,6 @@ def center_of_mass_velocity(dat):
     Return the center of mass velocity
     """
     # calculate vector in inner regions (we only care about J of disk)
-    #cut_off = dat['rad'][dat['type'] == "star"].quantile(0.8)i
     cut_off = calc_rx(dat[dat['type'] == "star"], 0.8)
     tmp = dat[dat['rad'] < cut_off].copy()
 
@@ -84,9 +83,7 @@ def tot_ang_mom(dat):
     Assumes positions and velocities have been centred.
     '''
     # calculate vector in inner regions (we only care about J of disk)
-    #cut_off = dat['rad'][dat['type'] == "star"].quantile(0.8)
-    cut_off = calc_rx(dat[dat['type'] == "star"], 0.8)
-    tmp = dat[dat['rad'] < cut_off].copy()
+    tmp = dat[(dat['rad'] > 2) & (dat['rad'] < 30)].copy()
 
     pos = np.array([tmp['x'], tmp['y'], tmp['z']]).T
     vel = np.array([tmp['vx'], tmp['vy'], tmp['vz']]).T
@@ -131,23 +128,18 @@ def calc_j(dat):
 
 def calc_jcirc_num(dat):
     '''
-    Calculates jcirc based on method of Kumar 2021:
-    bin particles in order of binding energy and use the max jz as the jc val
+    bin particles in binding energy space and use the max j as the jcirc(e) val
     '''
 
     dat = dat.sort_values('ParticleBindingEnergy')
 
     # binned values of jc
-    max_jc, bin_edges, bin_no = stats.binned_statistic(dat['ParticleBindingEnergy'], abs(dat['jz']), 'max', bins=100)
-    dx = bin_edges[1] - bin_edges[0]
-    ebin  = bin_edges[0:-1] + dx/2
+    max_jc, bin_edges, bin_no = stats.binned_statistic(dat['ParticleBindingEnergy'], dat['J'], 'max', bins=150)
+    de = bin_edges[1] - bin_edges[0]
+    ebin  = bin_edges[0:-1] + de/2
 
-    # add back onto data frame
-    dat['bin'] = bin_no
-
-    # create jc array for each particle
+    
     jc_arr = np.array([])
-
     for i in range(len(ebin)):
         len_bin = len(bin_no[bin_no == i+1])
         jc_bin = np.repeat(max_jc[i], len_bin)
@@ -184,15 +176,10 @@ def run(dat):
     dat['x'], dat['y'], dat['z'] = rotated.T[0], rotated.T[1], rotated.T[2]
     dat['vx'], dat['vy'], dat['vz'] = rotated_v.T[0], rotated_v.T[1], rotated_v.T[2]
 
-    # potential and angular momenta calcs
     print("Calculating jcirc for %d bound particles..." % dat.shape[0], flush=True)
-    
-    # bound particles only
+    # consider bound particles only
     dat = dat[dat['ParticleBindingEnergy'] < 0].copy()
     dat = calc_j(dat)
-
-    # get rid of interlopers
-    dat = dat[dat['rad'] < 2*dat['r200']].copy()
     dat = calc_jcirc_num(dat)
     print("Finished jcirc calcs", flush = True)
 
@@ -200,7 +187,7 @@ def run(dat):
     dat = dat[dat['type'] == "star"].copy()
 
     # clean up data for modelling
-    drop_cols = ["J","bin", "jx", "jy", "jz", "jp",
+    drop_cols = ["J","jx", "jy", "jz", "jp",
                 "cop_x", "cop_y", "cop_z",  "type", "GroupNumber"]
     dat = dat.drop(drop_cols, axis=1)
 
