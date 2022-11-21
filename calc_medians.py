@@ -107,105 +107,56 @@ def calc_fractions(dat):
     return dat
 
 
-def median_calc(dat, col, col_str, var_list):
+def median_calc(dat, var_list):
     '''
     Calculate medians for each component for each var in var_list
     '''
-    meds = dat.groupby([col])[var_list].median().reset_index().copy()
-    meds['method'] = col_str
+    meds = dat.groupby(["gmm_pred"])[var_list].median().reset_index().copy()
     meds.rename(columns={ meds.columns[0]: "component" }, inplace = True)
     
     return meds
 
-
-
 def main():
     # particle and group directories
     fpath = '/fred/oz009/kproctor/L0100N1504/processed/'
-    flist = glob.glob(fpath + "*.pkl")
+    flist = glob.glob(fpath + "central_*.pkl")
 
     # initialise output dataframes
     global_rows = []
     all_meds_rows = []
 
     for i, f in enumerate(flist):
+        print(i, " out of" , len(flist))
         gpn = int(re.findall(r'\d+', f)[-1]) # extract group number, last entry because numbers in filepath
         dat = pd.read_pickle(f)
         nstar = dat.shape[0]
       
-        # only process galaxies with at least 1000 star particles
-        if nstar < 1000:
-            continue
-       
         dat['GroupNumber'] = gpn
-        dat['Fe/O'] = dat['ElementAbundance/Iron']/dat['ElementAbundance/Oxygen']
         dat["Formation_z"] = 1/dat['StellarFormationTime'] - 1
         dat['mstar'] = dat['Mass'].sum()
-
         dat['nihl'] = dat[dat['gmm_pred'] == "IHL"].shape[0]
         dat['ndisk'] = dat[dat['gmm_pred'] == "disk"].shape[0]
         dat['nbulge'] = dat[dat['gmm_pred'] == "bulge"].shape[0]
-
-        ## Calculate kappa_rot and ellipticity as morphology indicator
-        r50 = calc_rx(dat, 0.5)
-        dat['kappa_co_30kpc'] = calc_kappa_co(dat, 30)
-        dat['kappa_co_2r50'] = calc_kappa_co(dat, 2*r50) # calculate kappa_co at 2*r50
-        ellip,triax,Transform,abc = calc_morphology.morphological_diagnostics(dat)
-        ellip_2r50,triax_2r50,Transform,abc_2r50 = calc_morphology.morphological_diagnostics(dat, aperture = 2*r50)
-        dat['ellip'] = ellip
-        dat['triax'] = triax
-        dat['a'] = abc[0]
-        dat['b'] = abc[1]
-        dat['c'] = abc[2]
-        dat['a2r50'] = abc_2r50[0]
-        dat['b2r50'] = abc_2r50[1]
-        dat['c2r50'] = abc_2r50[2]
+        dat['M_gt_50kpc'] = dat['Mass'][dat['rad'] > 50].sum()
+        dat['kappa_co_50kpc'] = calc_kappa_co(dat, 50)
+        dat['fdisk'] = dat['Mass'][dat['gmm_pred'] == "disk"].sum()/dat['mstar']
+        dat['fbulge'] = dat['Mass'][dat['gmm_pred'] == "bulge"].sum()/dat['mstar']
+        dat['fihl'] = dat['Mass'][dat['gmm_pred'] == "IHL"].sum()/dat['mstar']
        
-        ## Calculate IHL mass estimates for other methods
-        dat = classify_aperture_cut(dat)
-        dat = classify_kinematic_cuts(dat)
-
-        # mass fractions for various methods
-        dat = calc_fractions(dat)
-
         # save dataframe of just mass fractions and global properties
         global_cols = ['GroupNumber','mstar', 'm200', 'r200',
-             'kappa_co_30kpc', 'kappa_co_2r50',
-             'ellip', 'triax', 'a', 'b', 'c', 'a2r50', 'b2r50', 'c2r50',
-            "ihl_mad", "nihl", "ndisk", "nbulge",
-            'fihl_20kpc', 'fihl_2halfmass', 'fihl_kinematic',
-           'fdisk_kinematic', 'fbulge_kinematic', 'fihl', 'fdisk', 'fbulge']
+                       "nihl", "ndisk", "nbulge", 
+                        "fdisk", "fbulge", "fihl",  
+                        "M_gt_50kpc",
+                        "kappa_co_50kpc"]
         global_tmp = dat[global_cols].drop_duplicates()
         global_rows.append(global_tmp)
 
         # median properties by component for different methods
-        dat['gmm_pred_gal'] = np.where(dat['gmm_pred'] != "IHL", "galaxy", "IHL") 
-        var_list = ['jz/jcirc', 'ebindrel', 'Formation_z', 'Metallicity', 'BirthDensity', 'Fe/O']
-
-        gmm_meds = median_calc(dat, "gmm_pred", "gmm", var_list)
-        gmm_gal_meds = median_calc(dat, "gmm_pred_gal", "gmm_gal", var_list)
-        aperture_meds = median_calc(dat, "ihl_2halfmass", "aperture", var_list)
-        cut_meds = median_calc(dat, "kinematic_cuts", "cuts", var_list)
-
-        # get r50 for each component & method
-        if dat[dat['gmm_pred'] == "IHL"].shape[0] != 0:
-            r50_ihl = calc_rx(dat[dat['gmm_pred'] == "IHL"], 0.5)
-            gmm_meds.loc[gmm_meds['component'] == "IHL", "r50"] = r50_ihl
-        if dat[dat['gmm_pred'] == "disk"].shape[0] != 0:
-            r50_disk = calc_rx(dat[dat['gmm_pred'] == "disk"], 0.5)
-            gmm_meds.loc[gmm_meds['component'] == "disk", "r50"] = r50_disk
-            jzjc_0p7_diskmass = dat['Mass'][(dat['gmm_pred'] == "disk") & (dat['jz/jcirc'] > 0.7)].sum()
-            disk_mass = dat['Mass'][dat['gmm_pred'] == "disk"].sum()
-            f_jzjc = jzjc_0p7_diskmass/disk_mass
-            gmm_meds.loc[gmm_meds['component'] == 'disk', 'f_jzjc'] = f_jzjc
-        if dat[dat['gmm_pred'] == "bulge"].shape[0] != 0:
-            r50_bulge = calc_rx(dat[dat['gmm_pred'] == "bulge"], 0.5)
-            gmm_meds.loc[gmm_meds['component'] == "bulge", "r50"] = r50_bulge
-
-        all_meds = pd.concat([gmm_meds, gmm_gal_meds, aperture_meds, cut_meds])
+        var_list = ['jz/jcirc', 'ebindrel', 'Formation_z']
+        all_meds = median_calc(dat, var_list)
         all_meds['GroupNumber'] = gpn
         all_meds['mstar'] = dat['Mass'].sum()
-        all_meds['m200'] = dat['m200'].unique()[0]
 
         # append rows
         all_meds_rows.append(all_meds)

@@ -12,6 +12,13 @@ from scipy.optimize import brentq
 from scipy import stats
 
 
+def calc_ebindrel(dat):
+    e = dat['ParticleBindingEnergy']/dat['Mass']
+    dat['ebindrel'] = e/np.min(e)
+
+    return dat
+
+
 def calc_kappa_co(dat, rcut):
     '''
     Calculate kappa_rot & kappa_co as per Correa 2017
@@ -25,7 +32,7 @@ def calc_kappa_co(dat, rcut):
     kappa_rot = sum(dat['Krot'][dat['rad'] < rcut]) / sum(dat['K'][dat['rad'] < rcut])
     kappa_co = sum(dat['Krot'][(dat['rad'] < rcut) & (dat['jz'] > 0)]) / sum(dat['K'][dat['rad'] < rcut])
 
-    return kappa_co
+    return kappa_rot, kappa_co
 
 
 def calc_rx(dat, x):
@@ -46,23 +53,21 @@ def calc_rx(dat, x):
 
 def centre_pos(dat):
     '''
-    Centre positions on centre of potential (for EAGLE galaxies)
+    Centre positions on centre of potential
     '''
     dat['x'] = dat['x'] - dat['cop_x']
     dat['y'] = dat['y'] - dat['cop_y']
     dat['z'] = dat['z'] - dat['cop_z']
-
     dat['rad'] = np.sqrt(dat['x']**2 + dat['y']**2 + dat['z']**2)
 
     return dat
 
 
-def center_of_mass_velocity(dat):
+def centre_of_mass_velocity(dat):
     """
     Return the center of mass velocity
     """
-    # calculate vector in inner regions (we only care about J of disk)
-    cut_off = calc_rx(dat[dat['type'] == "star"], 0.8)
+    cut_off = calc_rx(dat, 0.8)
     tmp = dat[dat['rad'] < cut_off].copy()
 
     mtot = tmp["Mass"].sum()
@@ -120,7 +125,6 @@ def calc_j(dat):
     dat['jx'] = (dat['y']*dat['vz'] - dat['z']*dat['vy'])
     dat['jy'] = (dat['z']*dat['vx'] - dat['x']*dat['vz'])
     dat['jz'] = (dat['x']*dat['vy'] - dat['y']*dat['vx'])
-
     dat['J'] = np.sqrt(dat['jx']**2 + dat['jy']**2 + dat['jz']**2)
 
     return dat
@@ -146,9 +150,7 @@ def calc_jcirc_num(dat):
         jc_arr = np.append(jc_arr, jc_bin)
 
     dat['jcirc'] = jc_arr
-    dat['jp'] = np.sqrt(dat['jx']**2 + dat['jy']**2)
     dat['jz/jcirc'] = dat['jz']/dat['jcirc']
-    dat['jp/jcirc'] = dat['jp']/dat['jcirc']
 
     return dat
 
@@ -158,36 +160,32 @@ def run(dat):
     Aligns galaxy with net angular momentum vector within a sphere enclosing 80% of the stellar mass
     Calculates angular momentum and jcirc values for all star particles
     Inputs:
-    dat: pd.DataFrame(), processed star and DM data (DM used in angular momenta calcs)
+    dat: pd.DataFrame(), processed star data
     '''
-    # centre of potential subtraction
+    # centre pos and vel
     dat = centre_pos(dat)
+    dat = centre_of_mass_velocity(dat)
 
-    # centre of mass velocity subtraction (within sphere of stars)
-    dat = center_of_mass_velocity(dat)
+    # in rare cases, there are clumps of (apparently bound) stars very far from the galaxy centre
+    # remove these
+    dat = dat[dat['rad'] < 2000].copy()
 
     # align pos and vels such that J is normal to the disk (if disk exists)
     jtot = tot_ang_mom(dat)
     rot_mat = find_rotation_matrix(jtot)
     rotated = rot_mat.apply(np.array([dat['x'], dat['y'], dat['z']]).T)
     rotated_v = rot_mat.apply(np.array([dat['vx'], dat['vy'], dat['vz']]).T)
-
-    # redefine pos and vel so that they are aligned with the disk
     dat['x'], dat['y'], dat['z'] = rotated.T[0], rotated.T[1], rotated.T[2]
     dat['vx'], dat['vy'], dat['vz'] = rotated_v.T[0], rotated_v.T[1], rotated_v.T[2]
-
-    print("Calculating jcirc for %d bound particles..." % dat.shape[0], flush=True)
-    # consider bound particles only
+    
     dat = dat[dat['ParticleBindingEnergy'] < 0].copy()
+    print("Calculating jcirc for %d bound particles..." % dat.shape[0], flush=True)
     dat = calc_j(dat)
     dat = calc_jcirc_num(dat)
     print("Finished jcirc calcs", flush = True)
 
-    # only interested in stars from here on
-    dat = dat[dat['type'] == "star"].copy()
-
     # clean up data for modelling
-    drop_cols = ["J","jx", "jy", "jz", "jp",
+    drop_cols = ["J","jx", "jy", "jz",
                 "cop_x", "cop_y", "cop_z",  "type", "GroupNumber"]
     dat = dat.drop(drop_cols, axis=1)
 
