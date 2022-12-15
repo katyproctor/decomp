@@ -6,11 +6,14 @@
 G = 4.301721e-6 # [kpc.(km/s)^2/Msol]
 
 import numpy as np
+import pandas as pd
+
 from scipy import interpolate
 from scipy.spatial.transform import Rotation
 from scipy.optimize import brentq
 from scipy import stats
 
+import calc_morphology
 
 def calc_ebindrel(dat):
     e = dat['ParticleBindingEnergy']/dat['Mass']
@@ -50,6 +53,15 @@ def calc_rx(dat, x):
 
     return rx
 
+
+def median_calc(dat, var_list):
+    '''
+    Calculate medians for each component for each var in var_list
+    '''
+    meds = dat.groupby(["gmm_pred"])[var_list].median().reset_index().copy()
+    meds.rename(columns={ meds.columns[0]: "component" }, inplace = True)
+
+    return meds
 
 def centre_pos(dat):
     '''
@@ -151,8 +163,84 @@ def calc_jcirc_num(dat):
 
     dat['jcirc'] = jc_arr
     dat['jz/jcirc'] = dat['jz']/dat['jcirc']
+    dat['jp/jcirc'] = np.sqrt(dat['jx']**2+dat['jy']**2)/dat['jcirc']
 
     return dat
+
+
+def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, gpn):
+
+    z_1Gyr = 0.0755492 
+    disk = dat[dat['gmm_pred'] == "disk"].copy()
+    bulge = dat[dat['gmm_pred'] == "bulge"].copy()
+    ihl = dat[dat['gmm_pred'] == "IHL"].copy()
+
+    if disk is None or disk['Mass'].sum() == 0:
+        krot_d, kco_d = np.NaN, np.NaN
+        r50_d = np.NaN
+        disk_sfr1Gyr, disk_ellip, disk_med_formz, fd = np.NaN, np.NaN, np.NaN, np.NaN
+    else:
+        krot_d, kco_d = calc_kappa_co(disk, disk['rad'].max())
+        r50_d = calc_rx(disk, 0.5)
+        disk_sfr1Gyr = disk[disk['Formation_z'] < z_1Gyr].shape[0]
+        disk_ellip, _, _, _ = calc_morphology.morphological_diagnostics(disk, aperture=disk['rad'].max())
+        disk_med_formz = disk['Formation_z'].median()
+        fd = disk['Mass'].sum()/dat['Mass'].sum()
+
+    if ihl is None or ihl['Mass'].sum() == 0:
+        krot_i, kco_i = np.NaN, np.NaN
+        r50_i = np.NaN
+        ihl_sfr1Gyr, ihl_ellip, ihl_med_formz, fihl, fihl_gt_3p6kpc, fihl_gt_newt = np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN
+
+    else:
+        krot_i, kco_i = calc_kappa_co(ihl, ihl['rad'].max())
+        r50_i = calc_rx(ihl, 0.5)
+        ihl_sfr1Gyr = ihl[ihl['Formation_z'] < z_1Gyr].shape[0]
+
+        if ihl.shape[0] < 50:
+            ihl_ellip = np.NaN
+        else:
+            ihl_ellip, _, _, _ = calc_morphology.morphological_diagnostics(ihl, aperture=ihl['rad'].max())
+
+        ihl_med_formz = ihl['Formation_z'].median()
+        fihl = ihl['Mass'].sum()/dat['Mass'].sum()
+        fihl_gt_3p6kpc = ihl['Mass'][ihl['rad'] > 3.6].sum()/dat['Mass'].sum()
+        fihl_gt_newt = ihl['Mass'][ihl['rad'] > 2.8*0.7].sum()/dat['Mass'].sum()         
+
+    krot_b, kco_b = calc_kappa_co(bulge, bulge['rad'].max())
+    r50_b  = calc_rx(bulge, 0.5)
+    bulge_sfr1Gyr = bulge[bulge['Formation_z'] < z_1Gyr].shape[0]
+    bulge_ellip, _, _, _ = calc_morphology.morphological_diagnostics(bulge, aperture=bulge['rad'].max())
+    bulge_med_formz = bulge['Formation_z'].median()
+    fb = bulge['Mass'].sum()/dat['Mass'].sum()
+
+    # global stuff
+    mstar = dat['Mass'].sum()
+    m200 = dat['m200'].unique()[0]
+
+    # save summary dataframe
+    summary = [[gpn, fd, fb, fihl, mstar, m200,
+                  disk_mad, bulge_mad, ihl_mad, comp_no,
+                  fihl_gt_3p6kpc, fihl_gt_newt,
+                  krot_d, krot_b, krot_i,
+                  kco_d, kco_b, kco_i, r50_d, r50_b, r50_i,
+                  disk_sfr1Gyr, bulge_sfr1Gyr, ihl_sfr1Gyr,
+                  disk_ellip, bulge_ellip, ihl_ellip,
+                  disk_med_formz, bulge_med_formz, ihl_med_formz]]
+
+    col_names = ["GroupNumber", "fdisk", "fbulge", "fihl", "mstar", "m200",
+                    "disk_mad", "bulge_mad", "ihl_mad", "comp_no",
+                    "fihl_gt_3p6kpc", "fihl_gt_newt",
+                    "krot_disk", "krot_bulge", "krot_ihl",
+                    "kco_disk", "kco_bulge", "kco_ihl",
+                    "r50_disk", "r50_bulge", "r50_ihl",
+                    "sfr_disk", "sfr_bulge", "sfr_ihl",
+                    "ellip_disk", "ellip_bulge", "ellip_ihl",
+                    "med_formz_disk", "med_formz_bulge", "med_formz_ihl"]
+
+    summary = pd.DataFrame(summary, columns = col_names)
+
+    return summary
 
 
 def run(dat):

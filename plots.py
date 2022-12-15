@@ -8,9 +8,8 @@ import math
 
 import properties
 
-def plot_classification(min_ncomp, max_ncomp, models, m_disk, m_bulge, m_ihl,
-                        disk, bulge, ihl, mtot,
-                        allocs_arr, sph, ihl_bool, output_folder, fname):
+def plot_classification(dat, min_ncomp, max_ncomp, models, m_disk, m_bulge, m_ihl, comp_no, 
+                        disk, bulge, ihl, allocs_arr, sph, output_folder, fname):
 
     ns = np.arange(min_ncomp,max_ncomp+1)
 
@@ -21,14 +20,13 @@ def plot_classification(min_ncomp, max_ncomp, models, m_disk, m_bulge, m_ihl,
 
     fig, ax = plt.subplots(2,3, figsize = (3.321*3, 2*3.0))
     colors = {'disk':'#2a9d8f', 'IHL':'#ffb703', 'bulge':'#b7094c', np.nan:'grey'}
-
+ 
+    mtot = dat['Mass'].sum()
+    comps = dat['gmm_pred'].unique()
     bulge_mad = round(np.median(abs(m_bulge - bulge['Mass'].sum()))/mtot,3)
 
-    if ihl_bool:
-        try:
-            ihl_mad = round(np.median(abs(m_ihl - ihl['Mass'].sum()))/mtot, 3)
-        except:
-            ihl_mad = np.NaN
+    if "IHL" in comps:
+        ihl_mad = round(np.median(abs(m_ihl - ihl['Mass'].sum()))/mtot, 3)
     else:
         ihl_mad = np.NaN
 
@@ -37,7 +35,7 @@ def plot_classification(min_ncomp, max_ncomp, models, m_disk, m_bulge, m_ihl,
         jzjc_y = model.means_.T[0]
         ebind_y = model.means_.T[1]
         comp = pd.Series(allocs_arr[n-min_ncomp])
-
+       
         ax[0,0].scatter(np.repeat(n, len(jzjc_y)), jzjc_y, c=comp.map(colors), s = 20)
         ax[0,0].set_xlabel("$\mathrm{n}$", fontsize = 10)
         ax[0,0].set_ylabel(r"${\mathrm{\langle\, j_{z}/j_{circ}\rangle}}$", fontsize = 10)
@@ -50,19 +48,18 @@ def plot_classification(min_ncomp, max_ncomp, models, m_disk, m_bulge, m_ihl,
 
         ax[0,2].set_visible(False)
 
-    # disk
     if sph == True:
         ax[1,0].set_visible(False)
+
     else:
         disk_mad = round(np.median(abs(m_disk - disk['Mass'].sum()))/mtot, 3)
         ax[1,0].scatter(ns, m_disk, c = '#2a9d8f', s = 18)
-        ax[1,0].axhline(np.median(m_disk), c = 'grey', lw = 0.9)
-        ax[1,0].axhline(np.median(m_disk)*1.1, c = 'grey', linestyle = "--", lw = 0.9)
-        ax[1,0].axhline(np.median(m_disk)*0.9, c = 'grey', linestyle = "--", lw = 0.9)
+        ax[1,0].axhline(m_disk[comp_no-min_ncomp], c = 'grey', lw = 0.9)
+        ax[1,0].axhline(m_disk[comp_no-min_ncomp]*1.1, c = 'grey', linestyle = "--", lw = 0.9)
+        ax[1,0].axhline(m_disk[comp_no-min_ncomp]*0.9, c = 'grey', linestyle = "--", lw = 0.9)
         ax[1,0].text(0.7, 0.9, r"$\sigma_{\rm{disk}}\,=\,$"+ str(disk_mad),
          transform=ax[1,0].transAxes)
         ax[1,0].xaxis.get_major_locator().set_params(integer=True)
-        # highlights median value
         med_ind = np.where(m_disk == np.median(m_disk))
         ax[1,0].scatter(ns[med_ind], m_disk[med_ind], c= "k")
         ax[1,0].set_xlabel("$\mathrm{n}$", fontsize = 10)
@@ -70,23 +67,22 @@ def plot_classification(min_ncomp, max_ncomp, models, m_disk, m_bulge, m_ihl,
 
     # bulge
     ax[1,1].scatter(ns, m_bulge, c = '#b7094c', s = 18)
-    ax[1,1].axhline(np.median(m_bulge), c = 'grey', lw = 0.9)
-    ax[1,1].axhline(np.median(m_bulge)*1.1, c = 'grey', linestyle = "--", lw = 0.9)
-    ax[1,1].axhline(np.median(m_bulge)*0.9, c = 'grey', linestyle = "--", lw = 0.9)
+    ax[1,1].axhline(m_bulge[comp_no-min_ncomp], c = 'grey', lw = 0.9)
+    ax[1,1].axhline(m_bulge[comp_no-min_ncomp]*1.1, c = 'grey', linestyle = "--", lw = 0.9)
+    ax[1,1].axhline(m_bulge[comp_no-min_ncomp]*0.9, c = 'grey', linestyle = "--", lw = 0.9)
     ax[1,1].text(0.7, 0.9, r"$\sigma_{\rm{bulge}}\,=\,$"+ str(bulge_mad),
     transform=ax[1,1].transAxes)
     ax[1,1].set_xlabel("$\mathrm{n}$", fontsize = 10)
     ax[1,1].set_ylabel("$\mathrm{M_{bulge}\, (M_\odot)}$", fontsize = 10)
     ax[1,1].xaxis.get_major_locator().set_params(integer=True)
-
     med_ind = np.where(m_bulge == np.median(m_bulge))
     ax[1,1].scatter(ns[med_ind], m_bulge[med_ind], c= "k")
 
     # ihl
     ax[1,2].scatter(ns, m_ihl, c = '#ffb703', s = 18)
-    ax[1,2].axhline(np.median(m_ihl), c = 'grey', lw = 0.9)
-    ax[1,2].axhline(np.median(m_ihl)*1.1, c = 'grey', linestyle = "--", lw = 0.9)
-    ax[1,2].axhline(np.median(m_ihl)*0.9, c = 'grey', linestyle = "--", lw = 0.9)
+    ax[1,2].axhline(m_ihl[comp_no-min_ncomp], c = 'grey', lw = 0.9)
+    ax[1,2].axhline(m_ihl[comp_no-min_ncomp]*1.1, c = 'grey', linestyle = "--", lw = 0.9)
+    ax[1,2].axhline(m_ihl[comp_no-min_ncomp]*0.9, c = 'grey', linestyle = "--", lw = 0.9)
     ax[1,2].text(0.7, 0.9, r"$\sigma_{\rm{IHL}}\,=\,$"+ str(ihl_mad),
     transform=ax[1,2].transAxes)
     ax[1,2].set_xlabel("$\mathrm{n}$", fontsize = 10)
@@ -100,7 +96,6 @@ def plot_classification(min_ncomp, max_ncomp, models, m_disk, m_bulge, m_ihl,
     plt.savefig(output_folder + fname + "_decomp.png",
     facecolor="white", dpi=300)
     plt.close()
-
 
 
 def plot_proj(dat, output_folder, fname):
@@ -120,6 +115,9 @@ def plot_proj(dat, output_folder, fname):
 
     if "IHL" in comps:
         ihl = dat[dat['gmm_pred'] == "IHL"].copy()
+        if ihl.shape[0] < 50:
+            print("no plots")
+            return
         fihl = round(ihl['Mass'].sum()/dat['Mass'].sum(), 3)
         _, kco_ihl = properties.calc_kappa_co(ihl, ihl['rad'].max())
         kco_ihl = round(kco_ihl, 3)

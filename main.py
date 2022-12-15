@@ -97,7 +97,6 @@ def main():
 
     startTime = time.time()
     print("Processing groups: ", keep_groups) 
-
     for gpn in keep_groups:
         gpn = int(gpn)
         print("Reading group number:", gpn)
@@ -108,12 +107,13 @@ def main():
         ## Calculate various properties for modelling
         dat = properties.run(dat)
 
-        ## Decomposition model
+        ## Decomposition model and component properties calc
         plot_folder = output_fpath + "plots/"
         if not os.path.exists(plot_folder):
             os.makedirs(plot_folder)
 
-        dat, summary = model.run(dat, plot_folder, gpn)
+        dat, disk_mad, bulge_mad, ihl_mad, comp_no  = model.run(dat, plot_folder, gpn)
+        summary = properties.calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, gpn)
         global_list.append(summary)
      
         ## Save output for central
@@ -130,8 +130,6 @@ def main():
     # save global data
     executionTime = (time.time() - startTime)
     print('Time to run all galaxies: ' + str(round(executionTime/60, 3)) + ' minutes', flush = True)
-
-    # save global summary data
     global_dat = pd.concat(global_list, ignore_index = True)
     global_dat.to_pickle(output_fpath+"summary"+str(job_ind)+".pkl")
 
