@@ -103,7 +103,11 @@ def main():
         
         ## Process star partiles in central
         dat = run_processing(file_names, var_list, group_dat, gpn, base)
-    
+       
+        if dat.shape[0] < 10000:
+            print("fewer than 10000 stellar particles")
+            continue
+ 
         ## Calculate various properties for modelling
         dat = properties.run(dat)
 
@@ -112,8 +116,8 @@ def main():
         if not os.path.exists(plot_folder):
             os.makedirs(plot_folder)
 
-        dat, disk_mad, bulge_mad, ihl_mad, comp_no  = model.run(dat, plot_folder, gpn)
-        summary = properties.calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, gpn)
+        dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk_bool  = model.run(dat, plot_folder, gpn)
+        summary = properties.calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk_bool, gpn)
         global_list.append(summary)
      
         ## Save output for central

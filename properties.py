@@ -15,6 +15,7 @@ from scipy import stats
 
 import calc_morphology
 
+
 def calc_ebindrel(dat):
     e = dat['ParticleBindingEnergy']/dat['Mass']
     dat['ebindrel'] = e/np.min(e)
@@ -168,7 +169,7 @@ def calc_jcirc_num(dat):
     return dat
 
 
-def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, gpn):
+def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk, gpn):
 
     z_1Gyr = 0.0755492 
     disk = dat[dat['gmm_pred'] == "disk"].copy()
@@ -193,7 +194,11 @@ def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, gpn):
         ihl_sfr1Gyr, ihl_ellip, ihl_med_formz, fihl, fihl_gt_3p6kpc, fihl_gt_newt = np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN
 
     else:
-        krot_i, kco_i = calc_kappa_co(ihl, ihl['rad'].max())
+        try:
+            krot_i, kco_i = calc_kappa_co(ihl, ihl['rad'].max())
+        except ZeroDivisionError:
+            krot_i, kco_i = np.NaN, np.NaN
+
         r50_i = calc_rx(ihl, 0.5)
         ihl_sfr1Gyr = ihl[ihl['Formation_z'] < z_1Gyr].shape[0]
 
@@ -220,7 +225,7 @@ def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, gpn):
 
     # save summary dataframe
     summary = [[gpn, fd, fb, fihl, mstar, m200,
-                  disk_mad, bulge_mad, ihl_mad, comp_no,
+                  disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk,
                   fihl_gt_3p6kpc, fihl_gt_newt,
                   krot_d, krot_b, krot_i,
                   kco_d, kco_b, kco_i, r50_d, r50_b, r50_i,
@@ -229,7 +234,7 @@ def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, gpn):
                   disk_med_formz, bulge_med_formz, ihl_med_formz]]
 
     col_names = ["GroupNumber", "fdisk", "fbulge", "fihl", "mstar", "m200",
-                    "disk_mad", "bulge_mad", "ihl_mad", "comp_no",
+                    "disk_mad", "bulge_mad", "ihl_mad", "comp_no", "thick_disk",
                     "fihl_gt_3p6kpc", "fihl_gt_newt",
                     "krot_disk", "krot_bulge", "krot_ihl",
                     "kco_disk", "kco_bulge", "kco_ihl",
@@ -256,7 +261,7 @@ def run(dat):
 
     # in rare cases, there are clumps of (apparently bound) stars very far from the galaxy centre
     # remove these
-    dat = dat[dat['rad'] < 2000].copy()
+    dat = dat[dat['rad'] < 3000].copy()
 
     # align pos and vels such that J is normal to the disk (if disk exists)
     jtot = tot_ang_mom(dat)
@@ -274,7 +279,7 @@ def run(dat):
 
     # clean up data for modelling
     drop_cols = ["J","jx", "jy", "jz",
-                "cop_x", "cop_y", "cop_z",  "type", "GroupNumber"]
+                "cop_x", "cop_y", "cop_z"]
     dat = dat.drop(drop_cols, axis=1)
 
     return dat

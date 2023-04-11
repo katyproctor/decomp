@@ -13,6 +13,7 @@ def fit_gmms(iter_dat, min_ncomp, max_ncomp):
     
     models = np.array([])
     allocs_arr = []
+    thick_disk = []
     model_dat = iter_dat[['jz/jcirc', 'ebindrel', 'jp/jcirc']]
     
     for n in range(min_ncomp, max_ncomp+1):
@@ -27,8 +28,9 @@ def fit_gmms(iter_dat, min_ncomp, max_ncomp):
         iter_dat[col_name] = preds
 
         # classify Gaussian clusters as disk, bulge or IHL
-        iter_dat["comp_" + str(n)], allocs = classify_clusters.simultaneous_allocation(iter_dat, col_name, model)
+        iter_dat["comp_" + str(n)], allocs, thick_disk_bool = classify_clusters.simultaneous_allocation(iter_dat, col_name, model)
         allocs_arr.append(allocs)
+        thick_disk.append(thick_disk_bool)
 
         # if no significant disk component at n=3, classify galaxy as spheroid
         jzjc_means = model.means_.T[0]
@@ -42,7 +44,7 @@ def fit_gmms(iter_dat, min_ncomp, max_ncomp):
     # models are saved in reverse order
     models = np.flip(models)
 
-    return [iter_dat, models, allocs_arr, sph]
+    return [iter_dat, models, allocs_arr, sph, thick_disk]
 
 
 def fit_sph_gmms(iter_dat, min_ncomp, max_ncomp):
@@ -126,19 +128,20 @@ def run(dat, plot_folder, gpn):
 
         # number of Gaussian comps to run GMM with
         min_ncomp = 3
-        max_ncomp = 17
+        max_ncomp = 15
      
         if (max_ncomp - min_ncomp + 1)%2 == 0:
             raise Exception("Total number of models must be odd")
 
         # run gmm
-        dat, models, allocs_arr, sph  = fit_gmms(dat, min_ncomp, max_ncomp)
+        dat, models, allocs_arr, sph, thick_disk  = fit_gmms(dat, min_ncomp, max_ncomp)
 
         # if galaxy is a spheroid, run spheroid variation of gmm
         if sph == True:
             min_ncomp = min_ncomp - 1
             max_ncomp = max_ncomp - 1
             dat, models, allocs_arr  = fit_sph_gmms(dat, min_ncomp, max_ncomp)
+            thick_disk = np.repeat(False, max_ncomp-min_ncomp+1)
 
         # calculate mass in each component for each model
         m_disk, m_bulge, m_ihl = calc_mass_comps(dat, min_ncomp, max_ncomp, sph)
@@ -146,6 +149,9 @@ def run(dat, plot_folder, gpn):
         # choose final allocation model
         disk, bulge, ihl, disk_mad, bulge_mad, ihl_mad, comp_no = classify_clusters.select_model(dat, min_ncomp, sph,
                                                                                                  m_disk, m_bulge, m_ihl)
+        # true if final model included thick disk comp
+        thick_disk_bool = thick_disk[comp_no - min_ncomp]
+        print("thick disk: ", thick_disk_bool)
 
 	# assign each particle a component
         if ihl is not None:
@@ -176,4 +182,4 @@ def run(dat, plot_folder, gpn):
                                  plot_folder, str(gpn))
         plots.plot_proj(dat, plot_folder, str(gpn))
 
-        return dat, disk_mad, bulge_mad, ihl_mad, comp_no
+        return dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk_bool

@@ -9,10 +9,12 @@ cm_to_kpc = 3.24078e-22
 s_to_Gyr = 1/(86400*365.25*1e9)
 cm_to_km = 1e-5
 
-def read_stars(fnames, keep_group, var_list):
+
+def read_stars(fnames, keep_group, var_list, central = True):
     """ Read star data, fnames is list of particle data file names,
      keep_group is the GroupNumber to subset the data to.
-     var_list is the list of variables to save. """
+     var_list is the list of variables to save
+     central: Boolean indicating whether to subset to stars bound to the central galaxy only."""
 
     # Output array.
     data_list = []
@@ -31,9 +33,13 @@ def read_stars(fnames, keep_group, var_list):
         f = h5py.File(ff, 'r')
         tmp_gn = f['PartType4/GroupNumber'][...]
         tmp_sgn = f['PartType4/SubGroupNumber'][...]
+       
+        # keep particles in FoF group
+        if central == False:
+            keep_ind = tmp_gn == keep_group
 
-        # keep particles in group and centrals only
-        keep_ind = (tmp_gn == keep_group) & (tmp_sgn == 0)
+        else: # keep particles in FoF group and centrals only
+            keep_ind = (tmp_gn == keep_group) & (tmp_sgn == 0)
 
         all_vars = []
 
@@ -74,10 +80,146 @@ def read_stars(fnames, keep_group, var_list):
     else:
         data = pd.DataFrame([])
 
-    # to distinguish from DM
-    data['type'] = "star"
+    return data
+
+
+def read_stars_subgroups(fnames, keep_group, keep_subgroups, var_list):
+    """ Read star data, fnames is list of particle data file names,
+     keep_group is the GroupNumber to subset the data to.
+     var_list is the list of variables to save
+     central: Boolean indicating whether to subset to stars bound to the central galaxy only."""
+
+    # Output array.
+    data_list = []
+
+    # Column headers (replace Coordinates with x,y,z)
+    expanded_cols = var_list.copy()
+    expanded_cols.remove("Coordinates")
+    expanded_cols.remove("Velocity")
+    new_cols = ["x", "y", "z", "vx", "vy", "vz"]
+
+    for i in range(6):
+        expanded_cols.insert(i, new_cols[i])
+
+    for ff in fnames:
+        f = h5py.File(ff, 'r')
+
+        # only read data fro relevant group and subgroups
+        tmp_gn = f['PartType4/GroupNumber'][...]
+        tmp_sgn = f['PartType4/SubGroupNumber'][...]
+        keep_ind = (tmp_gn == keep_group) & (np.isin(tmp_sgn, np.array(keep_subgroups)))
+
+        all_vars = []
+
+        if(any(keep_ind)):
+
+            for tmp_var in var_list:
+
+                if(tmp_var in ["Coordinates", "Velocity"]):
+                    tmp = f['PartType4/' + str(tmp_var)][:][keep_ind].T # extract x,y,z comps
+
+                else:
+                    tmp = f['PartType4/' + str(tmp_var)][keep_ind]
+
+                # Get conversion factors.
+                cgs     = f['PartType4/' + str(tmp_var)].attrs.get('CGSConversionFactor')
+                aexp    = f['PartType4/' + str(tmp_var)].attrs.get('aexp-scale-exponent')
+                hexp    = f['PartType4/' + str(tmp_var)].attrs.get('h-scale-exponent')
+
+                # Get expansion factor and Hubble parameter from the header.
+                a       = f['Header'].attrs.get('Time')
+                h       = f['Header'].attrs.get('HubbleParam')
+                boxsize = f['Header'].attrs.get('BoxSize')      # L [Mph/h].
+
+                # Convert to physical.
+                tmp = np.multiply(tmp, cgs * a**aexp * h**hexp , dtype='f8')
+
+                # Combine with other variables (for 1 file).
+                all_vars.append(tmp)
+            f.close()
+
+            # Combine data from different files.
+            data_list.append(pd.DataFrame(np.vstack(all_vars).T, columns = expanded_cols))
+
+    # combine to Pandas df
+    if data_list:
+        data = pd.concat(data_list, ignore_index = True)
+
+    else:
+        data = pd.DataFrame([])
 
     return data
+
+
+def read_stars_subset(fnames, subset_var="GroupNumber", subset_ids = [100], var_list= ["Coordinates", "Velocity", "Mass"]):
+    """ Read star data, fnames is list of particle data file names,
+     subset_var: variable used to subset the particle data on, default to GroupNumber
+     ids is list of subset_var to read. e.g. List of GroupNumbers in default case.
+     var_list is the list of stellar properties to save. """
+
+    # Output array.
+    data_list = []
+
+    # Column headers (replace Coordinates with x,y,z)
+    expanded_cols = var_list.copy()
+    expanded_cols.remove("Coordinates")
+    expanded_cols.remove("Velocity")
+    new_cols = ["x", "y", "z", "vx", "vy", "vz"]
+
+    for i in range(6):
+        expanded_cols.insert(i, new_cols[i])
+
+    if type(subset_ids) == int:
+        subset_ids = [subset_ids]
+
+    # Loop over each file and extract relevant data
+    for ff in fnames:
+        f = h5py.File(ff, 'r')
+        all_vars = []
+        tmp_ids = f['PartType4/'+ subset_var][...]
+
+        keep_ind = np.isin(tmp_ids, np.array(subset_ids))
+
+        if(any(keep_ind)):
+
+            for tmp_var in var_list:
+
+                if(tmp_var in ["Coordinates", "Velocity"]):
+                    tmp = f['PartType4/' + str(tmp_var)][:][keep_ind].T # extract x,y,z comps
+
+                else:
+                    tmp = f['PartType4/' + str(tmp_var)][keep_ind]
+
+                # Get conversion factors.
+                cgs     = f['PartType4/' + str(tmp_var)].attrs.get('CGSConversionFactor')
+                aexp    = f['PartType4/' + str(tmp_var)].attrs.get('aexp-scale-exponent')
+                hexp    = f['PartType4/' + str(tmp_var)].attrs.get('h-scale-exponent')
+
+                # Get expansion factor and Hubble parameter from the header.
+                a       = f['Header'].attrs.get('Time')
+                h       = f['Header'].attrs.get('HubbleParam')
+                boxsize = f['Header'].attrs.get('BoxSize')      # L [Mph/h].
+
+                # Convert to physical.
+                tmp = np.multiply(tmp, cgs * a**aexp * h**hexp , dtype='f8')
+
+                # Combine with other variables (for 1 file).
+                all_vars.append(tmp)
+            f.close()
+
+            # Combine data from different files.
+            data_list.append(pd.DataFrame(np.vstack(all_vars).T, columns = expanded_cols))
+
+    # combine to Pandas df
+    if data_list:
+        data = pd.concat(data_list, ignore_index = True)
+
+    else:
+        data = pd.DataFrame([])
+
+    return data
+
+
 
 
 def read_dm(fnames, keep_group):

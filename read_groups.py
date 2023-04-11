@@ -96,6 +96,51 @@ def read_groups(nfiles, gpfpath, zstring = "028_z000p000"):
     return data
 
 
+def get_subgroups(nfiles, gpfpath, zstring):
+
+    # Output array.
+    dat_list = []
+ 
+    # Loop over each file and extract the data.
+    for i in range(nfiles):
+        f = h5py.File(gpfpath + 'eagle_subfind_tab_' + zstring + '.%i.hdf5'%i, 'r')
+        
+        dset = f['Subhalo']
+        subgpns = np.array(dset['SubGroupNumber'])
+        gpn = np.array(dset["GroupNumber"])
+        cop = dset['CentreOfPotential']
+        mstar = dset['MassType'][:,4]
+        mdm = dset['MassType'][:,1]
+  
+        # Get conversion factors.
+        cgs_length     = dset['CentreOfMass'].attrs.get('CGSConversionFactor')
+        aexp_length    = dset['CentreOfMass'].attrs.get('aexp-scale-exponent')
+        hexp    = dset['CentreOfMass'].attrs.get('h-scale-exponent')
+
+        cgs_mass     = f['Subhalo/Stars']["Mass"].attrs.get('CGSConversionFactor')
+        aexp_mass = f['Subhalo/Stars']["Mass"].attrs.get('aexp-scale-exponent')
+        hexp_mass = f['Subhalo/Stars']["Mass"].attrs.get('h-scale-exponent')
+
+        # Get expansion factor and Hubble parameter from the header.
+        a       = f['Header'].attrs.get('Time')
+        h       = f['Header'].attrs.get('HubbleParam')
+        boxsize = f['Header'].attrs.get('BoxSize')      # L [Mph/h].
+
+        # Convert to physical units - kpc / Msol
+        cop = np.multiply(cop, cm_to_kpc * cgs_length * a**aexp_length * h**hexp, dtype='f8')
+        mstar = np.multiply(mstar, g_to_msol * cgs_mass * a**aexp_mass * h**hexp_mass, dtype='f8')
+        mdm = np.multiply(mdm, g_to_msol * cgs_mass * a**aexp_mass * h**hexp_mass, dtype='f8')
+        tmp = np.vstack([gpn.T, subgpns.T, cop.T, mstar.T, mdm.T])
+        dat_list.append(pd.DataFrame(tmp.T,
+                                     columns = ["GroupNumber", "SubGroupNumber",
+                                                "cop_x", "cop_y", "cop_z", "mstar", "mdm"]))
+
+        f.close()
+
+    data = pd.concat(dat_list, ignore_index=True)
+
+    return data    
+
 
 
 def read_com_cop(nfiles, gpfpath, zstring = "028_z000p000"):
@@ -118,11 +163,16 @@ def read_com_cop(nfiles, gpfpath, zstring = "028_z000p000"):
         gpn = np.array(dset["GroupNumber"][central_ind])
         cop = dset['CentreOfPotential'][central_ind]
         com = dset['CentreOfMass'][central_ind]
+        mstar = f['Subhalo/Stars']["Mass"][central_ind]
 
         # Get conversion factors.
         cgs_length     = dset['CentreOfMass'].attrs.get('CGSConversionFactor')
         aexp_length    = dset['CentreOfMass'].attrs.get('aexp-scale-exponent')
         hexp    = dset['CentreOfMass'].attrs.get('h-scale-exponent')
+
+        cgs_mass     = f['Subhalo/Stars']["Mass"].attrs.get('CGSConversionFactor')
+        aexp_mass = f['Subhalo/Stars']["Mass"].attrs.get('aexp-scale-exponent')
+        hexp_mass = f['Subhalo/Stars']["Mass"].attrs.get('h-scale-exponent')
 
         # Get expansion factor and Hubble parameter from the header.
         a       = f['Header'].attrs.get('Time')
@@ -132,11 +182,12 @@ def read_com_cop(nfiles, gpfpath, zstring = "028_z000p000"):
         # Convert to physical units - kpc / Msol
         cop = np.multiply(cop, cm_to_kpc * cgs_length * a**aexp_length * h**hexp, dtype='f8')
         com = np.multiply(com, cm_to_kpc * cgs_length * a**aexp_length * h**hexp, dtype='f8')
+        mstar = np.multiply(mstar, g_to_msol * cgs_mass * a**aexp_mass * h**hexp_mass, dtype='f8')
 
-        tmp = np.vstack([gpn.T, cop.T, com.T])
+        tmp = np.vstack([gpn.T, com.T, mstar.T])
         dat_list.append(pd.DataFrame(tmp.T,
-                                     columns = ["GroupNumber", "cop_x", "cop_y", "cop_z",
-                                                "com_x", "com_y", "com_z"]))
+                                     columns = ["GroupNumber", 
+                                                "com_x", "com_y", "com_z", "mstar"]))
 
         f.close()
 

@@ -9,14 +9,31 @@ def simultaneous_allocation(dat, clus_str, model):
 
     jzjc_means = model.means_.T[0]
     ebind_means = model.means_.T[1]
+    thick_disk_jzjc = 0.25 
     
     # Gaussian allocation
     clus_col = dat[clus_str]
     allocs_disk = np.where(jzjc_means >= 0.5, "disk", "sph")
     allocs_sph = pd.cut(ebind_means, bins=2, labels=['IHL', 'bulge'], include_lowest=True)
     allocs = np.where(jzjc_means < 0.5, allocs_sph, "disk")
+
+    # thick disk check
+    if "disk" in allocs:
+        min_disk_ebind = np.min(ebind_means[np.where(allocs == "disk")])
+        thick_disk_inds = np.where((allocs == "IHL") & (ebind_means > min_disk_ebind) & (jzjc_means > thick_disk_jzjc))
+
+        allocs[thick_disk_inds] = "disk"
+        print("thick disk inds: ", thick_disk_inds)
+
+        if len(thick_disk_inds[0]) > 0:
+            thick_disk_bool = True
+
+        else: # disk but no thick disk
+            thick_disk_bool = False
+    else: # sph no thick disk
+        thick_disk_bool = True
     
-    disk_inds = np.where(allocs_disk == 'disk')[0]
+    disk_inds = np.where((allocs_disk == 'disk') | (allocs == 'disk'))[0]
     ihl_inds = np.where(allocs == 'IHL')[0]
     bulge_inds = np.where(allocs == 'bulge')[0]
 
@@ -24,7 +41,7 @@ def simultaneous_allocation(dat, clus_str, model):
                     np.where(clus_col.isin(bulge_inds), "bulge",
                     np.where(clus_col.isin(ihl_inds), "IHL", "check")))
 
-    return comps, allocs
+    return comps, allocs, thick_disk_bool
 
 
 def sph_allocation(dat, clus_str, model):
@@ -57,7 +74,7 @@ def select_model(iter_dat, min_ncomp, sph, m_disk, m_bulge, m_ihl):
         ihl_ind = -1
     else:
         ihl_ind = np.where(m_ihl == med_ihl)[0][0]
-    
+
     bulge_ind = np.where(m_bulge == med_bulge)[0][0]
 
     # number of components of final alloation model
