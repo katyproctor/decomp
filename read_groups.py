@@ -164,6 +164,7 @@ def read_com_cop(nfiles, gpfpath, zstring = "028_z000p000"):
         cop = dset['CentreOfPotential'][central_ind]
         com = dset['CentreOfMass'][central_ind]
         mstar = f['Subhalo/Stars']["Mass"][central_ind]
+        rmax = f['Subhalo']["VmaxRadius"][central_ind]
 
         # Get conversion factors.
         cgs_length     = dset['CentreOfMass'].attrs.get('CGSConversionFactor')
@@ -182,12 +183,13 @@ def read_com_cop(nfiles, gpfpath, zstring = "028_z000p000"):
         # Convert to physical units - kpc / Msol
         cop = np.multiply(cop, cm_to_kpc * cgs_length * a**aexp_length * h**hexp, dtype='f8')
         com = np.multiply(com, cm_to_kpc * cgs_length * a**aexp_length * h**hexp, dtype='f8')
+        rmax = np.multiply(rmax, cm_to_kpc * cgs_length * a**aexp_length * h**hexp, dtype='f8')
         mstar = np.multiply(mstar, g_to_msol * cgs_mass * a**aexp_mass * h**hexp_mass, dtype='f8')
 
-        tmp = np.vstack([gpn.T, com.T, mstar.T])
+        tmp = np.vstack([gpn.T, com.T, mstar.T, rmax.T])
         dat_list.append(pd.DataFrame(tmp.T,
                                      columns = ["GroupNumber", 
-                                                "com_x", "com_y", "com_z", "mstar"]))
+                                                "com_x", "com_y", "com_z", "mstar", "rmax"]))
 
         f.close()
 

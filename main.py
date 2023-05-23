@@ -17,14 +17,16 @@ cm_to_kpc = 3.24078e-22
 s_to_Gyr = 1/(86400*365.25*1e9)
 cm_to_km = 1e-5
 
+
 def parse_args():
     """
     Input is list of GroupNumbers for which the central galaxy star particles will be processed and decomposed. Defaults to three groups for testing purposes.
     """
     parser = argparse.ArgumentParser(description='Process Eagle data.')
-    parser.add_argument("-gl", "--group_list", help="List of Eagle GroupNumbers to process.", nargs='*', default = [567, 914,1000])
+    parser.add_argument("-gl", "--group_list", help="List of Eagle GroupNumbers to process.", nargs='*', default = [567, 743, 505])
     parser.add_argument("-b", "--base_dir", help="Base directory for the Eagle data. Enter as string.")
     parser.add_argument("-o", "--out_dir", help="Where to store the processed star data. Enter as string.", default = "model_output")
+    parser.add_argument("-z", "--zstring", help="Snapshot to process. Defaults to z=0. Enter as snapshot_zreshift string.", default = "028_z000p000")
     parser.add_argument("-i", "--job_ind", help="index of job array")
   
     # default list of variables to store for each central - first four are required for modelling purposes
@@ -39,10 +41,10 @@ def parse_args():
     out_dir = args.out_dir
     keep_groups = args.group_list
     keep_vars = args.var_list
+    zstring = args.zstring
     job_ind = args.job_ind
 
-    return base_dir, out_dir, keep_groups, keep_vars, job_ind
-
+    return base_dir, out_dir, keep_groups, keep_vars, zstring, job_ind
 
 
 def unit_conversion(dat):
@@ -81,13 +83,13 @@ def run_processing(file_names, var_list, group_dat, gpn, base):
 def main():
 
     # set particle and group directories
-    base, output_fpath, keep_groups, var_list, job_ind = parse_args()  
-    fpath = base + 'particledata_028_z000p000/'
-    gpfpath = base + 'groups_028_z000p000/'
+    base, output_fpath, keep_groups, var_list, zstring, job_ind = parse_args() 
+    fpath = base + 'particledata_' + zstring + '/'
+    gpfpath = base + 'groups_' + zstring + '/'
     
     # get group data
-    nfiles_gp = read_groups.get_nfiles(gpfpath)
-    group_dat = read_groups.read_groups(nfiles_gp, gpfpath)
+    nfiles_gp = read_groups.get_nfiles(gpfpath, zstring)
+    group_dat = read_groups.read_groups(nfiles_gp, gpfpath, zstring)
    
     # list all z=0 files
     file_names = glob.glob(fpath + "*.hdf5")
@@ -104,20 +106,13 @@ def main():
         ## Process star partiles in central
         dat = run_processing(file_names, var_list, group_dat, gpn, base)
        
-        if dat.shape[0] < 10000:
-            print("fewer than 10000 stellar particles")
-            continue
- 
         ## Calculate various properties for modelling
         dat = properties.run(dat)
 
         ## Decomposition model and component properties calc
-        plot_folder = output_fpath + "plots/"
-        if not os.path.exists(plot_folder):
-            os.makedirs(plot_folder)
-
-        dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk_bool  = model.run(dat, plot_folder, gpn)
-        summary = properties.calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk_bool, gpn)
+        dat, summary  = model.run(dat)
+        summary_props = properties.calc_comp_properties(dat, gpn)
+        summary = summary.merge(summary_props, on = "GroupNumber") # merge model and comp summaries
         global_list.append(summary)
      
         ## Save output for central
@@ -126,8 +121,8 @@ def main():
         output_fname = "central_" + str(gpn) + ".pkl"
 
         vartmp= ["x","y","z","vx","vy","vz","ParticleBindingEnergy",
-                "Mass","Metallicity", "ParticleIDs"] 
-        extra_vars = ['m200', 'r200', 'jcirc', 'jz/jcirc', 'ebindrel', 'gmm_pred', 'Formation_z']
+                "Mass","Metallicity", "Formation_z","ParticleIDs"] 
+        extra_vars = ['m200', 'r200', 'jcirc', 'jz/jcirc', 'ebindrel', 'gmm_pred']
         save_vars = vartmp + extra_vars
         dat[save_vars].to_pickle(output_fpath+output_fname)
 

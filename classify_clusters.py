@@ -3,13 +3,13 @@ import numpy as np
 import pandas as pd
 
 
-def simultaneous_allocation(dat, clus_str, model):
+def disk_allocation(dat, clus_str, model, probs):
     '''Assign clusters to disk, bulge or IHL based on separation of:
-    jzjc means for disk, ebind means for bulge/IHL'''
+    jzjc means for disk, ebind means for bulge/IHL. 
+    Sum cluster probabilities to disk, bulge, IHL.'''
 
     jzjc_means = model.means_.T[0]
     ebind_means = model.means_.T[1]
-    thick_disk_jzjc = 0.25 
     
     # Gaussian allocation
     clus_col = dat[clus_str]
@@ -17,22 +17,6 @@ def simultaneous_allocation(dat, clus_str, model):
     allocs_sph = pd.cut(ebind_means, bins=2, labels=['IHL', 'bulge'], include_lowest=True)
     allocs = np.where(jzjc_means < 0.5, allocs_sph, "disk")
 
-    # thick disk check
-    if "disk" in allocs:
-        min_disk_ebind = np.min(ebind_means[np.where(allocs == "disk")])
-        thick_disk_inds = np.where((allocs == "IHL") & (ebind_means > min_disk_ebind) & (jzjc_means > thick_disk_jzjc))
-
-        allocs[thick_disk_inds] = "disk"
-        print("thick disk inds: ", thick_disk_inds)
-
-        if len(thick_disk_inds[0]) > 0:
-            thick_disk_bool = True
-
-        else: # disk but no thick disk
-            thick_disk_bool = False
-    else: # sph no thick disk
-        thick_disk_bool = True
-    
     disk_inds = np.where((allocs_disk == 'disk') | (allocs == 'disk'))[0]
     ihl_inds = np.where(allocs == 'IHL')[0]
     bulge_inds = np.where(allocs == 'bulge')[0]
@@ -41,10 +25,14 @@ def simultaneous_allocation(dat, clus_str, model):
                     np.where(clus_col.isin(bulge_inds), "bulge",
                     np.where(clus_col.isin(ihl_inds), "IHL", "check")))
 
-    return comps, allocs, thick_disk_bool
+    disk_probs = np.sum(probs[:,disk_inds], axis=1)
+    bulge_probs = np.sum(probs[:,bulge_inds], axis=1)
+    ihl_probs = np.sum(probs[:,ihl_inds], axis=1)
+
+    return comps, allocs, disk_probs, bulge_probs, ihl_probs
 
 
-def sph_allocation(dat, clus_str, model):
+def sph_allocation(dat, clus_str, model, probs):
     '''Assign clusters to bulge or IHL based on separation of ebind means'''
 
     ebind_means = model.means_.T[1]
@@ -56,49 +44,8 @@ def sph_allocation(dat, clus_str, model):
     ihl_inds = np.where(allocs == 'IHL')[0]
     comps = np.where(clus_col.isin(ihl_inds), "IHL", "bulge")
 
-    return comps, allocs
+    bulge_probs = np.sum(probs[:,bulge_inds], axis=1)
+    ihl_probs = np.sum(probs[:,ihl_inds], axis=1)
 
+    return comps, allocs, bulge_probs, ihl_probs
 
-def select_model(iter_dat, min_ncomp, sph, m_disk, m_bulge, m_ihl):
-    '''Select the model to use to allocate particles to components'''
-    med_disk = np.median(m_disk)
-    med_bulge = np.median(m_bulge)
-    med_ihl = np.median(m_ihl)
- 
-    if sph == False:
-        disk_ind = np.where(m_disk == med_disk)[0][0]
-    else:
-        disk_ind = -1
-
-    if med_ihl == 0:
-        ihl_ind = -1
-    else:
-        ihl_ind = np.where(m_ihl == med_ihl)[0][0]
-
-    bulge_ind = np.where(m_bulge == med_bulge)[0][0]
-
-    # number of components of final alloation model
-    ind = np.max([disk_ind, bulge_ind, ihl_ind])
-    comp_no = ind + min_ncomp
-
-    if sph == False:
-        disk = iter_dat[iter_dat["comp_" + str(comp_no)] == "disk"].copy()
-        disk_mad = np.median(abs(m_disk - disk['Mass'].sum()))
-    else:
-        disk = None
-        disk_mad = np.NaN
-
-    if med_ihl > 0:
-        ihl = iter_dat[iter_dat["comp_" + str(comp_no)] == "IHL"].copy()
-        ihl_mad = np.median(abs(m_ihl - ihl['Mass'].sum()))
-        bulge = iter_dat[iter_dat["comp_" + str(comp_no)] == "bulge"].copy()
-    else:
-        ihl = None
-        ihl_mad = np.NaN
-        # in case final model inclues IHL
-        bulge = iter_dat[(iter_dat["comp_" + str(comp_no)] == "bulge") |
-        (iter_dat["comp_" + str(comp_no)] == "IHL")].copy()
-
-    bulge_mad = np.median(abs(m_bulge - bulge['Mass'].sum()))
-
-    return  disk, bulge, ihl, disk_mad, bulge_mad, ihl_mad, comp_no 

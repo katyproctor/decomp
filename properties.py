@@ -39,6 +39,14 @@ def calc_kappa_co(dat, rcut):
     return kappa_rot, kappa_co
 
 
+def calc_DtoT(dat, rcut):
+    '''Calculate disk-to-total ratio within some spherical aperture, rcut'''
+    mstar_ap = dat['Mass'][dat['rad'] < rcut].sum()
+    sph_mass = 2*dat['Mass'][(dat['jz/jcirc'] < 0) & (dat['rad'] < rcut)].sum()
+    
+    return 1 - sph_mass/mstar_ap
+
+
 def calc_rx(dat, x):
     '''Calculate the radius that contains x% of the stellar mass.
     x to be input as decimal'''
@@ -169,9 +177,10 @@ def calc_jcirc_num(dat):
     return dat
 
 
-def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk, gpn):
+def calc_comp_properties(dat, gpn):
 
-    z_1Gyr = 0.0755492 
+    z_1Gyr = 0.0755492
+    dat['Formation_z'] = 1/(dat['StellarFormationTime']) - 1 
     disk = dat[dat['gmm_pred'] == "disk"].copy()
     bulge = dat[dat['gmm_pred'] == "bulge"].copy()
     ihl = dat[dat['gmm_pred'] == "IHL"].copy()
@@ -222,10 +231,11 @@ def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk,
     # global stuff
     mstar = dat['Mass'].sum()
     m200 = dat['m200'].unique()[0]
+    _, kappa_co_30kpc = calc_kappa_co(dat, 30)
+    DtoT_30kpc = calc_DtoT(dat, 30)
 
     # save summary dataframe
-    summary = [[gpn, fd, fb, fihl, mstar, m200,
-                  disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk,
+    summary = [[gpn, fd, fb, fihl, kappa_co_30kpc, DtoT_30kpc,
                   fihl_gt_3p6kpc, fihl_gt_newt,
                   krot_d, krot_b, krot_i,
                   kco_d, kco_b, kco_i, r50_d, r50_b, r50_i,
@@ -233,8 +243,8 @@ def calc_comp_properties(dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk,
                   disk_ellip, bulge_ellip, ihl_ellip,
                   disk_med_formz, bulge_med_formz, ihl_med_formz]]
 
-    col_names = ["GroupNumber", "fdisk", "fbulge", "fihl", "mstar", "m200",
-                    "disk_mad", "bulge_mad", "ihl_mad", "comp_no", "thick_disk",
+    col_names = ["GroupNumber", "fdisk", "fbulge", "fihl",
+                    "kappa_co_30kpc", "DtoT_30kpc",
                     "fihl_gt_3p6kpc", "fihl_gt_newt",
                     "krot_disk", "krot_bulge", "krot_ihl",
                     "kco_disk", "kco_bulge", "kco_ihl",
@@ -261,7 +271,7 @@ def run(dat):
 
     # in rare cases, there are clumps of (apparently bound) stars very far from the galaxy centre
     # remove these
-    dat = dat[dat['rad'] < 3000].copy()
+    dat = dat[dat['rad'] < 5000].copy()
 
     # align pos and vels such that J is normal to the disk (if disk exists)
     jtot = tot_ang_mom(dat)

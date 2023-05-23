@@ -5,55 +5,51 @@ import argparse
 from sklearn.mixture import GaussianMixture
 
 import classify_clusters
-import properties
-import plots
 
 
-def fit_gmms(iter_dat, min_ncomp, max_ncomp):
+def fit_disk_gmms(iter_dat, min_ncomp, max_ncomp, final_ncomp):
     
-    models = np.array([])
     allocs_arr = []
-    thick_disk = []
     model_dat = iter_dat[['jz/jcirc', 'ebindrel', 'jp/jcirc']]
+
+    ns = np.arange(min_ncomp, max_ncomp+1)
+    if final_ncomp not in ns:
+        ns = np.append(ns, final_ncomp)
     
-    for n in range(min_ncomp, max_ncomp+1):
+    for n in ns:
         model = GaussianMixture(n_components=n, n_init = 5,
         covariance_type='full', random_state=0).fit(model_dat)
-
-        models = np.append(model, models)
+        
         preds = model.predict(model_dat)
+        probs = model.predict_proba(model_dat)
 
         # save predicted cluster
         col_name = "clus_" + str(n)
         iter_dat[col_name] = preds
 
         # classify Gaussian clusters as disk, bulge or IHL
-        iter_dat["comp_" + str(n)], allocs, thick_disk_bool = classify_clusters.simultaneous_allocation(iter_dat, col_name, model)
+        iter_dat["comp_" + str(n)], allocs, disk_probs, bulge_probs, ihl_probs  = classify_clusters.disk_allocation(iter_dat, col_name, model, probs)
         allocs_arr.append(allocs)
-        thick_disk.append(thick_disk_bool)
 
-        # if no significant disk component at n=3, classify galaxy as spheroid
-        jzjc_means = model.means_.T[0]
-        if n==min_ncomp and all(jzjc_means < 0.5):
-            print("Galaxy is a spheroid")
-            sph = True
-            break
-        else:
-            sph = False
+        if n == final_ncomp:
+            # save component probs for final allocation model only
+            iter_dat['pdisk'] = disk_probs
+            iter_dat['pbulge'] = bulge_probs
+            iter_dat['pihl'] = ihl_probs
 
-    # models are saved in reverse order
-    models = np.flip(models)
-
-    return [iter_dat, models, allocs_arr, sph, thick_disk]
+    return [iter_dat, allocs_arr]
 
 
-def fit_sph_gmms(iter_dat, min_ncomp, max_ncomp):
-
-    models = np.array([])
+def fit_sph_gmms(iter_dat, min_ncomp, max_ncomp, final_ncomp):
+    
     allocs_arr = []
     model_dat = iter_dat[['jz/jcirc', 'ebindrel']]
 
-    for n in range(min_ncomp, max_ncomp+1):
+    ns = np.arange(min_ncomp, max_ncomp+1)
+    if final_ncomp not in ns:
+        ns = np.append(ns, final_ncomp)
+
+    for n in ns:
         # priors
         spacing = 1/(n - 1)
         ebind_guess = [i*spacing for i in range(n)]
@@ -63,45 +59,70 @@ def fit_sph_gmms(iter_dat, min_ncomp, max_ncomp):
         model = GaussianMixture(n_components=n, n_init = 5,
         covariance_type='full', means_init = priors, random_state=0).fit(model_dat)
 
-        models = np.append(model, models)
         preds = model.predict(model_dat)
-
+        probs = model.predict_proba(model_dat)
+        
         col_name = "clus_" + str(n)
         iter_dat[col_name] = preds
-        iter_dat["comp_" + str(n)], allocs  = classify_clusters.sph_allocation(iter_dat, col_name, model)
+        iter_dat["comp_" + str(n)], allocs, bulge_probs, ihl_probs = classify_clusters.sph_allocation(iter_dat, col_name, model, probs)
         allocs_arr.append(allocs)
 
-    # models are saved in reverse order
-    models = np.flip(models)
+        if n == final_ncomp:
+           # save component probs for final allocation model only
+           iter_dat['pdisk'] = np.nan
+           iter_dat['pbulge'] = bulge_probs
+           iter_dat['pihl'] = ihl_probs
 
-    return [iter_dat, models, allocs_arr]
+    return [iter_dat, allocs_arr]
 
 
-def calc_mass_comps(iter_dat, min_ncomp, max_ncomp, sph):
+def summarise_models(dat, min_ncomp, max_ncomp):
 
-    m_bulge = np.array([])
-    m_ihl = np.array([])
-    m_disk = np.array([])
-    ncomps = np.arange(min_ncomp,max_ncomp+1)
+    summary = dat[['GroupNumber', 'm200']].drop_duplicates().copy()
+    summary['mstar'] = dat['Mass'].sum()
 
-    for n in ncomps:
-        cname = "comp_" + str(n)
+    # mass predicted in each component with n
+    for i in range(min_ncomp, max_ncomp + 1):
+        mdisk = dat['Mass'][dat['comp_' + str(i)] == "disk"].sum()
+        mbulge = dat['Mass'][dat['comp_' + str(i)] == "bulge"].sum()
+        mihl = dat['Mass'][dat['comp_' + str(i)] == "IHL"].sum()
 
-        # disk mass
-        if sph == False:
-            tmp_disk = iter_dat['Mass'][iter_dat[cname] == "disk"].sum()
+        summary["mdisk_comp_" + str(i)] = mdisk
+        summary["mbulge_comp_" + str(i)] = mbulge
+        summary["mihl_comp_" + str(i)] = mihl
+    
+    return summary
 
-        else:
-            tmp_disk = 0
 
-        tmp_bulge = iter_dat['Mass'][iter_dat[cname] == "bulge"].sum()
-        tmp_ihl = iter_dat['Mass'][iter_dat[cname] == "IHL"].sum()
+def morph_class(iter_dat, nmorph=3):
+    '''Classifies a galaxy as Disk or Spheroid morphology based on a GMM with nmorph components'''
 
-        m_disk = np.append(m_disk, tmp_disk)
-        m_bulge = np.append(m_bulge, tmp_bulge)
-        m_ihl = np.append(m_ihl, tmp_ihl)
+    model_dat = iter_dat[['jz/jcirc', 'ebindrel', 'jp/jcirc']]
 
-    return m_disk, m_bulge, m_ihl
+    # 3-comp fit
+    model = GaussianMixture(n_components=nmorph, n_init = 5,
+        covariance_type='full', random_state=0).fit(model_dat)
+    jzjc_means = model.means_.T[0]
+
+    if all(jzjc_means < 0.5):
+        sph = True
+    else:
+        sph = False
+
+    return sph
+
+
+def allocate_particles(iter_dat, final_ncomp):
+    
+    disk_ids = iter_dat['ParticleIDs'][iter_dat['comp_'+str(final_ncomp)] == "disk"]
+    bulge_ids = iter_dat['ParticleIDs'][iter_dat['comp_'+str(final_ncomp)] == "bulge"]
+    ihl_ids = iter_dat['ParticleIDs'][iter_dat['comp_'+str(final_ncomp)] == "IHL"]
+
+    iter_dat['gmm_pred'] = np.where(iter_dat['ParticleIDs'].isin(disk_ids), "disk",
+                            np.where(iter_dat['ParticleIDs'].isin(bulge_ids), "bulge",
+                                np.where(iter_dat['ParticleIDs'].isin(ihl_ids), "IHL", "check")))
+
+    return iter_dat
 
 
 def log_fractions(dat):
@@ -115,71 +136,33 @@ def log_fractions(dat):
     fb = dat['Mass'][dat['gmm_pred'] == "bulge"].sum()/mstar
     fd = dat['Mass'][dat['gmm_pred'] == "disk"].sum()/mstar
 
+    print("m200: ", round(np.log10(m200), 2))
+    print("mstar: ", round(np.log10(mstar),2))
     print("disk fraction: ", fd)
     print("IHL fraction: ", fihl)
     print("bulge fraction: ", fb)
     print("nihl: ", dat[dat['gmm_pred'] == "IHL"].shape[0])
     print("-----------------------", flush = True)
-   
-    return fd, fb, fihl, mstar, m200
 
 
-def run(dat, plot_folder, gpn):
+def run(dat, min_ncomp=6, max_ncomp=15):
 
-        # number of Gaussian comps to run GMM with
-        min_ncomp = 3
-        max_ncomp = 15
-     
-        if (max_ncomp - min_ncomp + 1)%2 == 0:
-            raise Exception("Total number of models must be odd")
+    final_ncomp = 12 # model to allocate particles
 
-        # run gmm
-        dat, models, allocs_arr, sph, thick_disk  = fit_gmms(dat, min_ncomp, max_ncomp)
+    # classify as disk or spheroid
+    sph = morph_class(dat)
 
-        # if galaxy is a spheroid, run spheroid variation of gmm
-        if sph == True:
-            min_ncomp = min_ncomp - 1
-            max_ncomp = max_ncomp - 1
-            dat, models, allocs_arr  = fit_sph_gmms(dat, min_ncomp, max_ncomp)
-            thick_disk = np.repeat(False, max_ncomp-min_ncomp+1)
+    # run gmms varying n
+    if sph == False:
+        dat, allocs_arr = fit_disk_gmms(dat, min_ncomp, max_ncomp, final_ncomp)
 
-        # calculate mass in each component for each model
-        m_disk, m_bulge, m_ihl = calc_mass_comps(dat, min_ncomp, max_ncomp, sph)
-        
-        # choose final allocation model
-        disk, bulge, ihl, disk_mad, bulge_mad, ihl_mad, comp_no = classify_clusters.select_model(dat, min_ncomp, sph,
-                                                                                                 m_disk, m_bulge, m_ihl)
-        # true if final model included thick disk comp
-        thick_disk_bool = thick_disk[comp_no - min_ncomp]
-        print("thick disk: ", thick_disk_bool)
+    else:
+        dat, allocs_arr = fit_sph_gmms(dat, min_ncomp, max_ncomp, final_ncomp)
 
-	# assign each particle a component
-        if ihl is not None:
-            ihl_ids = ihl['ParticleIDs']
-        else:
-            ihl_ids = []
+    dat = allocate_particles(dat, final_ncomp)    
 
-        if bulge is not None:
-            bulge_ids = bulge['ParticleIDs']
-        else:
-            bulge_ids = []
+    # save mass in comps for various n for this galaxy
+    summary = summarise_models(dat, min_ncomp, max_ncomp)
+    log_fractions(dat)
 
-        if disk is not None:
-           disk_ids = disk['ParticleIDs']
-        else:
-            disk_ids = []
-
-        # save classifications and plot components
-        dat['gmm_pred'] = np.where(dat['ParticleIDs'].isin(disk_ids), "disk",
-                            np.where(dat['ParticleIDs'].isin(bulge_ids), "bulge",
-                                np.where(dat['ParticleIDs'].isin(ihl_ids), "IHL", "check")))
-        fd, fb, fihl, mstar, m200 = log_fractions(dat)
-
-        # plot how mass varies based on ncomp
-        plots.plot_classification(dat, min_ncomp, max_ncomp, models,
-                                 m_disk, m_bulge, m_ihl, comp_no,
-                                 disk, bulge, ihl, allocs_arr, sph,
-                                 plot_folder, str(gpn))
-        plots.plot_proj(dat, plot_folder, str(gpn))
-
-        return dat, disk_mad, bulge_mad, ihl_mad, comp_no, thick_disk_bool
+    return dat, summary
