@@ -7,5 +7,5 @@ By default, the code outputs particle allocations individually for each group (c
 To following code will decompose the stellar component of 3 central galaxies with GroupNumbers 100, 666, 1000:
 
 ```
-python main.py -gl [100, 666, 1000] -b "/path/to/particle/data/" -o "/path/to/output/folder/"
+python main.py -gl [100, 666, 1000] -b "/path/to/eagle/data/" -o "/path/to/output/folder/"
 ```
