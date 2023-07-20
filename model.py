@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import glob
-import argparse
 from sklearn.mixture import GaussianMixture
 
 import classify_clusters
@@ -81,7 +79,7 @@ def summarise_models(dat, min_ncomp, max_ncomp):
     summary = dat[['GroupNumber', 'm200']].drop_duplicates().copy()
     summary['mstar'] = dat['Mass'].sum()
 
-    # mass predicted in each component with n
+    # mass predicted in each component for diff n
     for i in range(min_ncomp, max_ncomp + 1):
         mdisk = dat['Mass'][dat['comp_' + str(i)] == "disk"].sum()
         mbulge = dat['Mass'][dat['comp_' + str(i)] == "bulge"].sum()

@@ -98,7 +98,8 @@ def main():
     global_list = []
 
     startTime = time.time()
-    print("Processing groups: ", keep_groups) 
+    print("Processing groups: ", keep_groups)
+ 
     for gpn in keep_groups:
         gpn = int(gpn)
         print("Reading group number:", gpn)
@@ -109,13 +110,11 @@ def main():
         ## Calculate various properties for modelling
         dat = properties.run(dat)
 
-        ## Decomposition model and component properties calc
+        ## Run decomposition models
         dat, summary  = model.run(dat)
-        summary_props = properties.calc_comp_properties(dat, gpn)
-        summary = summary.merge(summary_props, on = "GroupNumber") # merge model and comp summaries
         global_list.append(summary)
      
-        ## Save output for central
+        ## Save particle level output for centrals
         if not os.path.exists(output_fpath):
             os.makedirs(output_fpath) 
         output_fname = "central_" + str(gpn) + ".pkl"

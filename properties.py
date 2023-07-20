@@ -1,10 +1,3 @@
-# Functions to:
-#   - align particles to an angular momentum vector
-#   - calculate jz/jcirc for each particle
-#   - classify components via various methods in literature
-
-G = 4.301721e-6 # [kpc.(km/s)^2/Msol]
-
 import numpy as np
 import pandas as pd
 
@@ -12,8 +5,9 @@ from scipy import interpolate
 from scipy.spatial.transform import Rotation
 from scipy.optimize import brentq
 from scipy import stats
+from scipy.interpolate import interp1d
 
-import calc_morphology
+G = 4.301721e-6 # [kpc.(km/s)^2/Msol]
 
 
 def calc_ebindrel(dat):
@@ -53,14 +47,27 @@ def calc_rx(dat, x):
 
     dat = dat.sort_values("rad")
     dat['menc'] = dat['Mass'].cumsum()
-    x_mtot = np.max(dat['menc'])*x
-    dat['diff'] = abs(x_mtot - dat['menc'])
+    dat['fmass'] = dat['menc']/dat['Mass'].sum()
 
-    # find minimum diff from m50
-    rid = dat['diff'].idxmin()
-    rx = dat.loc[rid]['rad']
+   # first occurrence above 0.5
+    rid = np.argmax(dat['fmass'] >= x)
+    fid = dat['fmass'].iloc[rid]
 
-    return rx
+    if fid < x:
+        rx_arr = np.array(dat.iloc[rid:rid+2]['rad'])
+        fx_arr = np.array(dat.loc[rid:rid+2]['fmass'])
+
+    else:    
+        rx_arr = np.array(dat.iloc[rid-1:rid+1]['rad'])
+        fx_arr = np.array(dat.iloc[rid-1:rid+1]['fmass'])
+
+    if fx_arr[1] - fx_arr[0] < 0:
+        rtrans = dat['rad'].loc[rid]
+    else:
+        interp = interp1d(fx_arr, rx_arr)
+        rx = interp(x)
+
+    return float(rx)
 
 
 def median_calc(dat, var_list):
@@ -177,111 +184,28 @@ def calc_jcirc_num(dat):
     return dat
 
 
-def calc_comp_properties(dat, gpn):
-
-    z_1Gyr = 0.0755492
-    dat['Formation_z'] = 1/(dat['StellarFormationTime']) - 1 
-    disk = dat[dat['gmm_pred'] == "disk"].copy()
-    bulge = dat[dat['gmm_pred'] == "bulge"].copy()
-    ihl = dat[dat['gmm_pred'] == "IHL"].copy()
-
-    if disk is None or disk['Mass'].sum() == 0:
-        krot_d, kco_d = np.NaN, np.NaN
-        r50_d = np.NaN
-        disk_sfr1Gyr, disk_ellip, disk_med_formz, fd = np.NaN, np.NaN, np.NaN, np.NaN
-    else:
-        krot_d, kco_d = calc_kappa_co(disk, disk['rad'].max())
-        r50_d = calc_rx(disk, 0.5)
-        disk_sfr1Gyr = disk[disk['Formation_z'] < z_1Gyr].shape[0]
-        disk_ellip, _, _, _ = calc_morphology.morphological_diagnostics(disk, aperture=disk['rad'].max())
-        disk_med_formz = disk['Formation_z'].median()
-        fd = disk['Mass'].sum()/dat['Mass'].sum()
-
-    if ihl is None or ihl['Mass'].sum() == 0:
-        krot_i, kco_i = np.NaN, np.NaN
-        r50_i = np.NaN
-        ihl_sfr1Gyr, ihl_ellip, ihl_med_formz, fihl, fihl_gt_3p6kpc, fihl_gt_newt = np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN
-
-    else:
-        try:
-            krot_i, kco_i = calc_kappa_co(ihl, ihl['rad'].max())
-        except ZeroDivisionError:
-            krot_i, kco_i = np.NaN, np.NaN
-
-        r50_i = calc_rx(ihl, 0.5)
-        ihl_sfr1Gyr = ihl[ihl['Formation_z'] < z_1Gyr].shape[0]
-
-        if ihl.shape[0] < 50:
-            ihl_ellip = np.NaN
-        else:
-            ihl_ellip, _, _, _ = calc_morphology.morphological_diagnostics(ihl, aperture=ihl['rad'].max())
-
-        ihl_med_formz = ihl['Formation_z'].median()
-        fihl = ihl['Mass'].sum()/dat['Mass'].sum()
-        fihl_gt_3p6kpc = ihl['Mass'][ihl['rad'] > 3.6].sum()/dat['Mass'].sum()
-        fihl_gt_newt = ihl['Mass'][ihl['rad'] > 2.8*0.7].sum()/dat['Mass'].sum()         
-
-    krot_b, kco_b = calc_kappa_co(bulge, bulge['rad'].max())
-    r50_b  = calc_rx(bulge, 0.5)
-    bulge_sfr1Gyr = bulge[bulge['Formation_z'] < z_1Gyr].shape[0]
-    bulge_ellip, _, _, _ = calc_morphology.morphological_diagnostics(bulge, aperture=bulge['rad'].max())
-    bulge_med_formz = bulge['Formation_z'].median()
-    fb = bulge['Mass'].sum()/dat['Mass'].sum()
-
-    # global stuff
-    mstar = dat['Mass'].sum()
-    m200 = dat['m200'].unique()[0]
-    _, kappa_co_30kpc = calc_kappa_co(dat, 30)
-    DtoT_30kpc = calc_DtoT(dat, 30)
-
-    # save summary dataframe
-    summary = [[gpn, fd, fb, fihl, kappa_co_30kpc, DtoT_30kpc,
-                  fihl_gt_3p6kpc, fihl_gt_newt,
-                  krot_d, krot_b, krot_i,
-                  kco_d, kco_b, kco_i, r50_d, r50_b, r50_i,
-                  disk_sfr1Gyr, bulge_sfr1Gyr, ihl_sfr1Gyr,
-                  disk_ellip, bulge_ellip, ihl_ellip,
-                  disk_med_formz, bulge_med_formz, ihl_med_formz]]
-
-    col_names = ["GroupNumber", "fdisk", "fbulge", "fihl",
-                    "kappa_co_30kpc", "DtoT_30kpc",
-                    "fihl_gt_3p6kpc", "fihl_gt_newt",
-                    "krot_disk", "krot_bulge", "krot_ihl",
-                    "kco_disk", "kco_bulge", "kco_ihl",
-                    "r50_disk", "r50_bulge", "r50_ihl",
-                    "sfr_disk", "sfr_bulge", "sfr_ihl",
-                    "ellip_disk", "ellip_bulge", "ellip_ihl",
-                    "med_formz_disk", "med_formz_bulge", "med_formz_ihl"]
-
-    summary = pd.DataFrame(summary, columns = col_names)
-
-    return summary
-
-
 def run(dat):
     ''' 
-    Aligns galaxy with net angular momentum vector within a sphere enclosing 80% of the stellar mass
+    Aligns galaxy with net angular momentum vector between 2 and 30 kpc
     Calculates angular momentum and jcirc values for all star particles
     Inputs:
-    dat: pd.DataFrame(), processed star data
+    dat: pd.DataFrame(), processed particle data
     '''
-    # centre pos and vel
     dat = centre_pos(dat)
     dat = centre_of_mass_velocity(dat)
 
-    # in rare cases, there are clumps of (apparently bound) stars very far from the galaxy centre
-    # remove these
+    # there are sometimes clumps of (apparently bound) stars at large r
     dat = dat[dat['rad'] < 5000].copy()
 
-    # align pos and vels such that J is normal to the disk (if disk exists)
+    # rotate coords such that J is normal to the disk (if disk exists)
     jtot = tot_ang_mom(dat)
     rot_mat = find_rotation_matrix(jtot)
     rotated = rot_mat.apply(np.array([dat['x'], dat['y'], dat['z']]).T)
     rotated_v = rot_mat.apply(np.array([dat['vx'], dat['vy'], dat['vz']]).T)
     dat['x'], dat['y'], dat['z'] = rotated.T[0], rotated.T[1], rotated.T[2]
     dat['vx'], dat['vy'], dat['vz'] = rotated_v.T[0], rotated_v.T[1], rotated_v.T[2]
-    
     dat = dat[dat['ParticleBindingEnergy'] < 0].copy()
+    
     print("Calculating jcirc for %d bound particles..." % dat.shape[0], flush=True)
     dat = calc_j(dat)
     dat = calc_jcirc_num(dat)
