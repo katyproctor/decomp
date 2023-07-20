@@ -27,7 +27,7 @@ def parse_args():
     parser.add_argument("-b", "--base_dir", help="Base directory for the Eagle data. Enter as string.")
     parser.add_argument("-o", "--out_dir", help="Where to store the processed star data. Enter as string.", default = "model_output")
     parser.add_argument("-z", "--zstring", help="Snapshot to process. Defaults to z=0. Enter as snapshot_zreshift string.", default = "028_z000p000")
-    parser.add_argument("-i", "--job_ind", help="index of job array")
+    parser.add_argument("-i", "--job_ind", help="index of job array", default=0)
   
     # default list of variables to store for each central - first four are required for modelling purposes
     var_list = ["Coordinates", "Velocity", "ParticleBindingEnergy",
