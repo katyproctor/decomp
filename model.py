@@ -26,19 +26,17 @@ def fit_disk_gmms(iter_dat, min_ncomp, max_ncomp, final_ncomp):
         iter_dat[col_name] = preds
 
         # classify Gaussian clusters as disk, bulge or IHL
-        iter_dat["comp_" + str(n)], allocs, disk_probs, bulge_probs, ihl_probs  = classify_clusters.disk_allocation(iter_dat, col_name, model, probs)
+        iter_dat["comp_" + str(n)], allocs, ecut_tmp  = classify_clusters.disk_allocation(iter_dat, col_name, model, probs)
         allocs_arr.append(allocs)
 
         if n == final_ncomp:
-            # save component probs for final allocation model only
-            iter_dat['pdisk'] = disk_probs
-            iter_dat['pbulge'] = bulge_probs
-            iter_dat['pihl'] = ihl_probs
+            # save binding energy cut value used for final allocation
+            ecut = ecut_tmp
 
-    return [iter_dat, allocs_arr]
+    return [iter_dat, allocs_arr, ecut]
 
 
-def fit_sph_gmms(iter_dat, min_ncomp, max_ncomp, final_ncomp):
+def fit_sph_gmms(iter_dat, min_ncomp, max_ncomp, final_ncomp, priors = False):
     
     allocs_arr = []
     model_dat = iter_dat[['jz/jcirc', 'ebindrel']]
@@ -48,36 +46,42 @@ def fit_sph_gmms(iter_dat, min_ncomp, max_ncomp, final_ncomp):
         ns = np.append(ns, final_ncomp)
 
     for n in ns:
-        # priors
-        spacing = 1/(n - 1)
-        ebind_guess = [i*spacing for i in range(n)]
-        jzjc_guess = [0]*n
-        priors = np.array([jzjc_guess, ebind_guess]).T
 
-        model = GaussianMixture(n_components=n, n_init = 5,
-        covariance_type='full', means_init = priors, random_state=0).fit(model_dat)
+        if priors:
+
+            # priors
+            spacing = 1/(n - 1)
+            ebind_guess = [i*spacing for i in range(n)]
+            jzjc_guess = [0]*n
+            priors = np.array([jzjc_guess, ebind_guess]).T
+
+            model = GaussianMixture(n_components=n, n_init = 5,
+            covariance_type='full', means_init = priors, random_state=0).fit(model_dat)
+
+        else:
+            model = GaussianMixture(n_components=n, n_init = 5,
+            covariance_type='full', random_state=0).fit(model_dat)
 
         preds = model.predict(model_dat)
         probs = model.predict_proba(model_dat)
         
         col_name = "clus_" + str(n)
         iter_dat[col_name] = preds
-        iter_dat["comp_" + str(n)], allocs, bulge_probs, ihl_probs = classify_clusters.sph_allocation(iter_dat, col_name, model, probs)
+        iter_dat["comp_" + str(n)], allocs, ecut_tmp = classify_clusters.sph_allocation(iter_dat, col_name, model, probs)
         allocs_arr.append(allocs)
 
         if n == final_ncomp:
-           # save component probs for final allocation model only
-           iter_dat['pdisk'] = np.nan
-           iter_dat['pbulge'] = bulge_probs
-           iter_dat['pihl'] = ihl_probs
+            # save binding energy cut value used for final allocation
+            ecut = ecut_tmp
 
-    return [iter_dat, allocs_arr]
+    return [iter_dat, allocs_arr, ecut]
 
 
-def summarise_models(dat, min_ncomp, max_ncomp):
+def summarise_models(dat, min_ncomp, max_ncomp, ecut):
 
     summary = dat[['GroupNumber', 'm200']].drop_duplicates().copy()
     summary['mstar'] = dat['Mass'].sum()
+    summary['ecut'] = ecut
 
     # mass predicted in each component for diff n
     for i in range(min_ncomp, max_ncomp + 1):
@@ -88,6 +92,14 @@ def summarise_models(dat, min_ncomp, max_ncomp):
         summary["mdisk_comp_" + str(i)] = mdisk
         summary["mbulge_comp_" + str(i)] = mbulge
         summary["mihl_comp_" + str(i)] = mihl
+
+    disk_mass = dat['Mass'][dat['gmm_pred'] == 'disk'].sum()
+    bulge_mass = dat['Mass'][dat['gmm_pred'] == 'bulge'].sum()
+    ihl_mass = dat['Mass'][dat['gmm_pred'] == 'IHL'].sum()
+
+    summary['fdisk'] = np.where(disk_mass > 0, disk_mass/dat['Mass'].sum(), np.NaN) 
+    summary['fbulge'] = np.where(bulge_mass > 0, bulge_mass/dat['Mass'].sum(), np.NaN) 
+    summary['fihl'] = np.where(ihl_mass > 0, ihl_mass/dat['Mass'].sum(), np.NaN) 
     
     return summary
 
@@ -123,7 +135,7 @@ def allocate_particles(iter_dat, final_ncomp):
     return iter_dat
 
 
-def log_fractions(dat):
+def log_fractions(dat, ecut):
     '''
     Log mass fraction in each component
     '''
@@ -136,6 +148,7 @@ def log_fractions(dat):
 
     print("m200: ", round(np.log10(m200), 2))
     print("mstar: ", round(np.log10(mstar),2))
+    print("ecut: ", round(ecut, 2))
     print("disk fraction: ", fd)
     print("IHL fraction: ", fihl)
     print("bulge fraction: ", fb)
@@ -143,7 +156,7 @@ def log_fractions(dat):
     print("-----------------------", flush = True)
 
 
-def run(dat, min_ncomp=6, max_ncomp=15):
+def run(dat, min_ncomp=3, max_ncomp=15):
 
     final_ncomp = 12 # model to allocate particles
 
@@ -152,15 +165,16 @@ def run(dat, min_ncomp=6, max_ncomp=15):
 
     # run gmms varying n
     if sph == False:
-        dat, allocs_arr = fit_disk_gmms(dat, min_ncomp, max_ncomp, final_ncomp)
+        dat, allocs_arr, ecut = fit_disk_gmms(dat, min_ncomp, max_ncomp, final_ncomp)
 
     else:
-        dat, allocs_arr = fit_sph_gmms(dat, min_ncomp, max_ncomp, final_ncomp)
+        dat, allocs_arr, ecut = fit_sph_gmms(dat, min_ncomp, max_ncomp, final_ncomp)
 
     dat = allocate_particles(dat, final_ncomp)    
 
     # save mass in comps for various n for this galaxy
-    summary = summarise_models(dat, min_ncomp, max_ncomp)
-    log_fractions(dat)
+    summary = summarise_models(dat, min_ncomp, max_ncomp, ecut)
+    log_fractions(dat, ecut)
 
     return dat, summary
+

@@ -10,6 +10,8 @@ import read_particles
 import read_groups
 import properties
 import model
+import analysis
+
 
 # cgs to useful units
 g_to_msol = 5.02785e-34
@@ -18,12 +20,13 @@ s_to_Gyr = 1/(86400*365.25*1e9)
 cm_to_km = 1e-5
 
 
+
 def parse_args():
     """
     Input is list of GroupNumbers for which the central galaxy star particles will be processed and decomposed. Defaults to three groups for testing purposes.
     """
     parser = argparse.ArgumentParser(description='Process Eagle data.')
-    parser.add_argument("-gl", "--group_list", help="List of Eagle GroupNumbers to process.", nargs='*', default = [567, 743, 505])
+    parser.add_argument("-gl", "--group_list", help="List of Eagle GroupNumbers to process.", nargs='*', default = [743, 1000])
     parser.add_argument("-b", "--base_dir", help="Base directory for the Eagle data. Enter as string.")
     parser.add_argument("-o", "--out_dir", help="Where to store the processed star data. Enter as string.", default = "model_output")
     parser.add_argument("-z", "--zstring", help="Snapshot to process. Defaults to z=0. Enter as snapshot_zreshift string.", default = "028_z000p000")
@@ -31,7 +34,7 @@ def parse_args():
   
     # default list of variables to store for each central - first four are required for modelling purposes
     var_list = ["Coordinates", "Velocity", "ParticleBindingEnergy",
-                "Mass", "StellarFormationTime",
+                "Mass", "InitialMass", "StellarFormationTime",
                 "Metallicity", "ParticleIDs"
                 ]
     parser.add_argument("-vl", "--var_list", help="List of variables to store (for stellar particles)", nargs='*', default = var_list)
@@ -58,6 +61,7 @@ def unit_conversion(dat):
     dat['x'], dat['y'], dat['z'] = dat['x']* cm_to_kpc, dat['y']* cm_to_kpc, dat['z']* cm_to_kpc
     dat['vx'], dat['vy'], dat['vz'] = dat['vx']* cm_to_km, dat['vy']* cm_to_km, dat['vz']* cm_to_km
     dat['Mass'] = dat['Mass']*g_to_msol
+    dat['InitialMass'] = dat['InitialMass']*g_to_msol
 
     return dat
 
@@ -68,7 +72,7 @@ def run_processing(file_names, var_list, group_dat, gpn, base):
     file_names: string, directory where the Eagle particle data is stored
     group_dat: pd.DataFrame, group level data'''
 
-    dat = read_particles.read_stars(file_names, gpn, var_list)
+    dat, boxsize = read_particles.read_stars(file_names, gpn, var_list)
     
     # convert to useful units
     dat = unit_conversion(dat)
@@ -77,7 +81,7 @@ def run_processing(file_names, var_list, group_dat, gpn, base):
     # merge group data
     dat['GroupNumber'] = gpn
     dat = pd.merge(dat, group_dat, on = "GroupNumber", how='inner')
-    return dat
+    return dat, boxsize
 
 
 def main():
@@ -105,15 +109,18 @@ def main():
         print("Reading group number:", gpn)
         
         ## Process star partiles in central
-        dat = run_processing(file_names, var_list, group_dat, gpn, base)
+        dat, boxsize = run_processing(file_names, var_list, group_dat, gpn, base)
        
         ## Calculate various properties for modelling
-        dat = properties.run(dat)
+        dat = properties.run(dat, boxsize)
 
         ## Run decomposition models
         dat, summary  = model.run(dat)
+    
+        ## save component summary
+        summary = analysis.run(dat, summary) 
         global_list.append(summary)
-     
+
         ## Save particle level output for centrals
         if not os.path.exists(output_fpath):
             os.makedirs(output_fpath) 

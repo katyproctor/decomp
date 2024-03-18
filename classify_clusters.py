@@ -28,8 +28,11 @@ def disk_allocation(dat, clus_str, model, probs):
     disk_probs = np.sum(probs[:,disk_inds], axis=1)
     bulge_probs = np.sum(probs[:,bulge_inds], axis=1)
     ihl_probs = np.sum(probs[:,ihl_inds], axis=1)
-
-    return comps, allocs, disk_probs, bulge_probs, ihl_probs
+    
+    # value to split bulge and IHL gaussians
+    ecut = (np.max(ebind_means) + np.min(ebind_means))/2
+    
+    return comps, allocs, ecut
 
 
 def sph_allocation(dat, clus_str, model, probs):
@@ -47,5 +50,8 @@ def sph_allocation(dat, clus_str, model, probs):
     bulge_probs = np.sum(probs[:,bulge_inds], axis=1)
     ihl_probs = np.sum(probs[:,ihl_inds], axis=1)
 
-    return comps, allocs, bulge_probs, ihl_probs
+    # value to split bulge and IHL gaussians
+    ecut = (np.max(ebind_means) + np.min(ebind_means))/2
+
+    return comps, allocs, ecut
 

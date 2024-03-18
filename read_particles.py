@@ -49,7 +49,6 @@ def read_stars(fnames, keep_group, var_list, central = True):
 
                 if(tmp_var in ["Coordinates", "Velocity"]):
                     tmp = f['PartType4/' + str(tmp_var)][:][keep_ind].T # extract x,y,z comps
-
                 else:
                     tmp = f['PartType4/' + str(tmp_var)][keep_ind]
 
@@ -62,9 +61,15 @@ def read_stars(fnames, keep_group, var_list, central = True):
                 a       = f['Header'].attrs.get('Time')
                 h       = f['Header'].attrs.get('HubbleParam')
                 boxsize = f['Header'].attrs.get('BoxSize')      # L [Mph/h].
+    
+                # For boxsize
+                cgs_coord     = f[ptype_str+'/Coordinates'].attrs.get('CGSConversionFactor')
+                aexp_coord    = f[ptype_str+'/Coordinates'].attrs.get('aexp-scale-exponent')
+                hexp_coord    = f[ptype_str+'/Coordinates'].attrs.get('h-scale-exponent')
 
                 # Convert to physical.
                 tmp = np.multiply(tmp, cgs * a**aexp * h**hexp , dtype='f8')
+                boxsize = boxsize * cm_to_kpc * cgs_coord * a**aexp_coord * h**hexp_coord
 
                 # Combine with other variables (for 1 file).
                 all_vars.append(tmp)
@@ -80,7 +85,7 @@ def read_stars(fnames, keep_group, var_list, central = True):
     else:
         data = pd.DataFrame([])
 
-    return data
+    return data, boxsize
 
 
 def read_stars_subgroups(fnames, keep_group, keep_subgroups, var_list):

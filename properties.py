@@ -7,41 +7,18 @@ from scipy.optimize import brentq
 from scipy import stats
 from scipy.interpolate import interp1d
 
+from astropy.cosmology import Planck15  
+
 G = 4.301721e-6 # [kpc.(km/s)^2/Msol]
 
 
 def calc_ebindrel(dat):
-    e = dat['ParticleBindingEnergy']/dat['Mass']
+    e = dat['ParticleBindingEnergy'] # already specific binding e 
     dat['ebindrel'] = e/np.min(e)
-
     return dat
 
 
-def calc_kappa_co(dat, rcut):
-    '''
-    Calculate kappa_rot & kappa_co as per Correa 2017
-    '''
-    dat['R'] = np.sqrt(dat['x']**2 +dat['y']**2)
-
-    dat['jz'] = dat['jz/jcirc']*dat['jcirc']
-    dat['Krot'] = 0.5*dat['Mass']*(dat['jz']/dat['R'])**2
-    dat['K'] = 0.5*dat['Mass']*(dat['vx']**2 + dat['vy']**2 + dat['vz']**2)
-
-    kappa_rot = sum(dat['Krot'][dat['rad'] < rcut]) / sum(dat['K'][dat['rad'] < rcut])
-    kappa_co = sum(dat['Krot'][(dat['rad'] < rcut) & (dat['jz'] > 0)]) / sum(dat['K'][dat['rad'] < rcut])
-
-    return kappa_rot, kappa_co
-
-
-def calc_DtoT(dat, rcut):
-    '''Calculate disk-to-total ratio within some spherical aperture, rcut'''
-    mstar_ap = dat['Mass'][dat['rad'] < rcut].sum()
-    sph_mass = 2*dat['Mass'][(dat['jz/jcirc'] < 0) & (dat['rad'] < rcut)].sum()
-    
-    return 1 - sph_mass/mstar_ap
-
-
-def calc_rx(dat, x):
+def calc_rx(dat, x=0.5):
     '''Calculate the radius that contains x% of the stellar mass.
     x to be input as decimal'''
 
@@ -61,31 +38,27 @@ def calc_rx(dat, x):
         rx_arr = np.array(dat.iloc[rid-1:rid+1]['rad'])
         fx_arr = np.array(dat.iloc[rid-1:rid+1]['fmass'])
 
-    if fx_arr[1] - fx_arr[0] < 0:
-        rtrans = dat['rad'].loc[rid]
-    else:
-        interp = interp1d(fx_arr, rx_arr)
-        rx = interp(x)
+    try:
+        if fx_arr[1] - fx_arr[0] < 0:
+            rx = dat['rad'].loc[rid]
+        else:
+            interp = interp1d(fx_arr, rx_arr)
+            rx = interp(x)
+
+    except IndexError:
+        rx = dat['rad'].loc[rid]
 
     return float(rx)
 
 
-def median_calc(dat, var_list):
+def centre_pos(dat, boxsize):
     '''
-    Calculate medians for each component for each var in var_list
+    Centre positions on centre of potential and account for periodicity
     '''
-    meds = dat.groupby(["gmm_pred"])[var_list].median().reset_index().copy()
-    meds.rename(columns={ meds.columns[0]: "component" }, inplace = True)
 
-    return meds
-
-def centre_pos(dat):
-    '''
-    Centre positions on centre of potential
-    '''
-    dat['x'] = dat['x'] - dat['cop_x']
-    dat['y'] = dat['y'] - dat['cop_y']
-    dat['z'] = dat['z'] - dat['cop_z']
+    dat['x'] = np.mod(dat['x'] - dat['cop_x']+0.5*boxsize, boxsize)-0.5*boxsize
+    dat['y'] = np.mod(dat['y'] - dat['cop_y']+0.5*boxsize, boxsize)-0.5*boxsize
+    dat['z'] = np.mod(dat['z'] - dat['cop_z']+0.5*boxsize, boxsize)-0.5*boxsize
     dat['rad'] = np.sqrt(dat['x']**2 + dat['y']**2 + dat['z']**2)
 
     return dat
@@ -148,7 +121,7 @@ def find_rotation_matrix(j_vector):
 
 def calc_j(dat):
     '''
-    Calculates specific j for each particle and total angular momentum vector.
+    Calculates specific j for each particle and total specfic angular momentum vector.
     '''
     dat['jx'] = (dat['y']*dat['vz'] - dat['z']*dat['vy'])
     dat['jy'] = (dat['z']*dat['vx'] - dat['x']*dat['vz'])
@@ -169,9 +142,9 @@ def calc_jcirc_num(dat):
     max_jc, bin_edges, bin_no = stats.binned_statistic(dat['ParticleBindingEnergy'], dat['J'], 'max', bins=150)
     de = bin_edges[1] - bin_edges[0]
     ebin  = bin_edges[0:-1] + de/2
-
     
     jc_arr = np.array([])
+
     for i in range(len(ebin)):
         len_bin = len(bin_no[bin_no == i+1])
         jc_bin = np.repeat(max_jc[i], len_bin)
@@ -184,18 +157,15 @@ def calc_jcirc_num(dat):
     return dat
 
 
-def run(dat):
+def run(dat, boxsize):
     ''' 
     Aligns galaxy with net angular momentum vector between 2 and 30 kpc
     Calculates angular momentum and jcirc values for all star particles
     Inputs:
     dat: pd.DataFrame(), processed particle data
     '''
-    dat = centre_pos(dat)
+    dat = centre_pos(dat, boxsize)
     dat = centre_of_mass_velocity(dat)
-
-    # there are sometimes clumps of (apparently bound) stars at large r
-    dat = dat[dat['rad'] < 5000].copy()
 
     # rotate coords such that J is normal to the disk (if disk exists)
     jtot = tot_ang_mom(dat)
@@ -214,8 +184,8 @@ def run(dat):
     # clean up data for modelling
     drop_cols = ["J","jx", "jy", "jz",
                 "cop_x", "cop_y", "cop_z"]
+
     dat = dat.drop(drop_cols, axis=1)
 
     return dat
-
 
